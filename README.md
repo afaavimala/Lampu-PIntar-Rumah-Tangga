@@ -83,6 +83,7 @@ npm run deploy
 Catatan:
 - `npm run deploy:pages` pakai project default `smartlamp-dashboard`.
 - Untuk ganti project Pages: `CF_PAGES_PROJECT=nama-project npm run deploy:pages`.
+- Untuk deploy Pages production, set minimal `VITE_API_BASE_URL` agar tidak ikut URL local saat build.
 - Untuk override env backend/frontend dari root, gunakan `.env` (template: `.env.example`) lalu jalankan `npm run env:local`.
 
 ## Setup Lokal
@@ -224,7 +225,7 @@ npm run deploy:worker
 Frontend Pages:
 
 ```bash
-npm run deploy:pages
+VITE_API_BASE_URL=https://your-worker.your-subdomain.workers.dev npm run deploy:pages
 ```
 
 Deploy semua:
