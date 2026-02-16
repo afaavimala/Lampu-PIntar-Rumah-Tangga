@@ -1,0 +1,264 @@
+:root {
+  --bg-1: #f3f5f8;
+  --bg-2: #dfe7ef;
+  --ink-strong: #102033;
+  --ink-soft: #44576d;
+  --card: #ffffff;
+  --line: #d3dde8;
+  --success: #0f9d58;
+  --danger: #c4362d;
+  --accent: #145ea8;
+  --accent-2: #1f8a70;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  color: var(--ink-strong);
+  background: radial-gradient(circle at top left, var(--bg-2), var(--bg-1) 55%);
+  min-height: 100vh;
+}
+
+.loading-screen,
+.login-shell,
+.app-shell {
+  min-height: 100vh;
+}
+
+.loading-screen {
+  display: grid;
+  place-items: center;
+}
+
+.login-shell {
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.login-card {
+  width: min(460px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 1.6rem;
+  box-shadow: 0 14px 36px rgba(9, 32, 55, 0.12);
+}
+
+.login-card h1 {
+  margin: 0 0 0.4rem;
+}
+
+.subtitle {
+  margin: 0 0 1rem;
+  color: var(--ink-soft);
+}
+
+.login-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  background: #fff;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.58rem 0.9rem;
+  cursor: pointer;
+  background: linear-gradient(110deg, var(--accent), var(--accent-2));
+  color: white;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button.off,
+button.danger {
+  background: var(--danger);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.app-shell {
+  padding: 1rem;
+}
+
+.topbar {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.topbar p {
+  margin: 0.2rem 0 0;
+  color: var(--ink-soft);
+}
+
+.global-error {
+  margin: 0.9rem 0;
+}
+
+.device-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.9rem;
+}
+
+.device-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.95rem;
+}
+
+.device-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.device-card h3 {
+  margin: 0;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.badge.online {
+  background: rgba(15, 157, 88, 0.16);
+  color: var(--success);
+}
+
+.badge.offline {
+  background: rgba(196, 54, 45, 0.12);
+  color: var(--danger);
+}
+
+.device-location,
+.last-update,
+.power-state,
+.small {
+  margin: 0.45rem 0;
+  color: var(--ink-soft);
+}
+
+.controls {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.schedule-shell {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.8rem;
+}
+
+.schedule-shell > div {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.95rem;
+}
+
+.schedule-shell h3 {
+  margin-top: 0;
+}
+
+.schedule-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.schedule-edit-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.schedule-list ul,
+.schedule-runs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.schedule-list li,
+.schedule-runs li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem;
+}
+
+.schedule-list li.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(20, 94, 168, 0.35);
+}
+
+.schedule-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .controls {
+    flex-direction: column;
+  }
+}
