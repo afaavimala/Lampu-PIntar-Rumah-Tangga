@@ -104,6 +104,23 @@ export function signCommand(input: {
   })
 }
 
+export function executeCommand(input: {
+  deviceId: string
+  action: CommandAction
+  requestId: string
+  idempotencyKey: string
+}) {
+  return apiFetch<CommandEnvelope>('/api/v1/commands/execute', {
+    method: 'POST',
+    headers: jsonHeaders(input.idempotencyKey),
+    body: JSON.stringify({
+      deviceId: input.deviceId,
+      action: input.action,
+      requestId: input.requestId,
+    }),
+  })
+}
+
 export function getFallbackStatus() {
   return apiFetch<DeviceStatus[]>('/api/v1/status')
 }

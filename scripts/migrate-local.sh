@@ -3,10 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "[migrate-local] Applying local D1 migrations..."
+if [[ ! -f "$ROOT_DIR/backend/.env.local" ]]; then
+  echo "[migrate-local] Missing backend/.env.local. Run: npm run env:local"
+  exit 1
+fi
+
+echo "[migrate-local] Applying local MariaDB migrations..."
 (
   cd "$ROOT_DIR/backend"
-  npx wrangler d1 migrations apply smartlamp_db --local
+  npm run migrate
 )
 
 echo "[migrate-local] Done."

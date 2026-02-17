@@ -2,7 +2,29 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-API_BASE_URL="${VITE_API_BASE_URL:-http://127.0.0.1:8787}"
+source "$ROOT_DIR/scripts/lib/root-env.sh"
+
+resolve_optional_env_value() {
+  local value
+  if value="$(resolve_env_value_with_fallbacks "$@")"; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf ''
+}
+
+load_root_env "dev" || true
+
+BACKEND_PORT="$(resolve_optional_env_value "BACKEND_PORT")"
+if [[ -z "$BACKEND_PORT" ]]; then
+  BACKEND_PORT=8787
+fi
+
+API_BASE_URL="$(resolve_optional_env_value "FRONTEND_VITE_API_BASE_URL" "VITE_API_BASE_URL")"
+if [[ -z "$API_BASE_URL" ]]; then
+  API_BASE_URL="http://127.0.0.1:${BACKEND_PORT}"
+fi
+
 BACKEND_PID=""
 DASHBOARD_PID=""
 
@@ -17,10 +39,10 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-echo "[dev] Starting backend on :8787 ..."
+echo "[dev] Starting backend on :$BACKEND_PORT ..."
 (
   cd "$ROOT_DIR/backend"
-  npm run dev
+  PORT="$BACKEND_PORT" npm run dev
 ) &
 BACKEND_PID="$!"
 

@@ -1,6 +1,6 @@
 # ARSITEKTUR SISTEM IOT LAMPU PINTAR RUMAH TANGGA
 
-## ESP32 + HiveMQ + Cloudflare + Hono + Vite (Hybrid, Multi-Device, 100% Free Tier)
+## ESP32 + HiveMQ + Node.js + Hono + Vite + MariaDB (Hybrid, Multi-Device)
 
 Tanggal Dokumen: 16 February 2026
 
@@ -10,23 +10,23 @@ Tanggal Dokumen: 16 February 2026
 
 Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan baseline berikut:
 
-- Topologi `Hybrid`: Worker untuk control plane, MQTT broker untuk data plane realtime.
+- Topologi `Hybrid`: backend Node.js untuk control plane, MQTT broker untuk data plane realtime.
 - Skala `Multi-device`: tidak hardcoded ke `lampu1`.
-- Broker `HiveMQ`: MQTT TLS untuk ESP32 dan MQTT over WebSocket (WSS) untuk dashboard.
-- Framework backend wajib: `Hono` di atas Cloudflare Worker.
-- Framework frontend wajib: `Vite` untuk build dashboard ke Cloudflare Pages.
+- Broker `HiveMQ`: MQTT TLS untuk ESP32 dan MQTT over WebSocket (WSS) untuk backend proxy realtime.
+- Framework backend wajib: `Hono` di atas Node.js runtime.
+- Framework frontend wajib: `Vite` untuk build dashboard web.
 - API bersifat `open integration` dengan standar kontrak REST yang stabil.
 - Sistem mendukung `penjadwalan otomatis` ON/OFF berbasis waktu (cron + timezone).
 - Keamanan command: `shared MQTT credential` + `signed payload (HMAC)` + `short expiry`.
-- Biaya: tetap di jalur layanan gratis (Cloudflare Free + broker free tier).
+- Mode deployment utama: local server (self-host) dengan MariaDB.
 
 ---
 
 # 2. Ringkasan Ekosistem
 
-- `Vite App + Cloudflare Pages`: frontend dashboard (bundle/build via Vite).
-- `Hono App + Cloudflare Worker`: login JWT, authorisasi device, sign command, audit log, dan scheduler runner.
-- `Cloudflare D1`: users, devices, relasi user-device, dan command logs.
+- `Vite App`: frontend dashboard (bundle/build via Vite).
+- `Hono App + Node.js`: login JWT, authorisasi device, execute command (sign + publish), audit log, scheduler runner, dan realtime proxy MQTT -> SSE.
+- `MariaDB`: users, devices, relasi user-device, dan command logs.
 - `HiveMQ Broker`: bus pesan realtime MQTT.
 - `ESP32 + Relay`: subscribe command, verifikasi signature, eksekusi ON/OFF, publish status.
 
@@ -34,7 +34,7 @@ Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan
 
 - Backend API wajib menggunakan `Hono` framework.
 - Frontend dashboard wajib menggunakan `Vite` tooling.
-- Endpoint API didaftarkan via routing Hono (bukan handler Worker mentah).
+- Endpoint API didaftarkan via routing Hono (bukan handler runtime mentah).
 
 ---
 
@@ -43,11 +43,12 @@ Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan
 ## 3.1 Control Plane (HTTPS)
 
 ```text
-Dashboard (Pages)
+Dashboard (Browser)
   -> POST /api/v1/auth/login
   -> POST /api/v1/auth/refresh
   -> GET  /api/v1/bootstrap
-  -> POST /api/v1/commands/sign
+  -> POST /api/v1/commands/execute
+  -> GET  /api/v1/realtime/stream
   -> POST /api/v1/schedules
   -> GET  /api/v1/schedules
   -> GET  /api/v1/schedules/{scheduleId}
@@ -58,12 +59,13 @@ Dashboard (Pages)
   -> GET  /api/v1/devices
   -> GET  /api/v1/devices/{deviceId}/status
 
-Cloudflare Worker
+Backend Node.js (Hono)
   -> validasi JWT
   -> cek akses user-device
-  -> generate signed command envelope
+  -> generate + publish signed command envelope
+  -> stream realtime status/lwt via SSE
   -> eksekusi scheduler trigger (due schedules)
-  -> simpan audit ke D1
+  -> simpan audit ke MariaDB
 ```
 
 ## 3.2 Data Plane (MQTT Realtime)
@@ -71,10 +73,10 @@ Cloudflare Worker
 ```text
 ESP32 -- MQTT TLS ----\
                         > HiveMQ Broker
-Dashboard -- MQTT WSS -/
+Backend -- MQTT WSS ---/
 
-Dashboard subscribe status/lwt
-Dashboard publish command envelope signed ke topic cmd
+Backend subscribe status/lwt dan mem-forward ke SSE dashboard
+Backend publish command envelope signed ke topic cmd
 ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 ```
 
@@ -86,30 +88,30 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 
 1. User input email/password di dashboard.
 2. Dashboard kirim `POST /api/v1/auth/login`.
-3. Worker verifikasi password hash di D1 (`bcrypt`, fallback legacy hash untuk migrasi).
-4. Worker set access token cookie + refresh token cookie.
+3. Backend verifikasi password hash di MariaDB (`bcrypt`, fallback legacy hash untuk migrasi).
+4. Backend set access token cookie + refresh token cookie.
 
 ## 4.2 Refresh Session (Rotasi Token)
 
 1. Saat access token expired, dashboard kirim `POST /api/v1/auth/refresh`.
-2. Worker validasi refresh token cookie terhadap tabel `auth_sessions`.
-3. Jika valid, Worker membuat refresh session baru dan merotasi session lama.
-4. Worker menerbitkan access token baru + refresh token baru.
+2. Backend validasi refresh token cookie terhadap tabel `auth_sessions`.
+3. Jika valid, backend membuat refresh session baru dan merotasi session lama.
+4. Backend menerbitkan access token baru + refresh token baru.
 
 ## 4.3 Bootstrap Session
 
 1. Dashboard kirim `GET /api/v1/bootstrap` dengan JWT.
-2. Worker return daftar device yang bisa diakses user.
-3. Worker return konfigurasi MQTT WSS (host, port, topic pattern, kebijakan QoS/retain).
-4. Dashboard konek ke HiveMQ via WSS dan subscribe topic status/lwt device yang dimiliki user.
+2. Backend return daftar device yang bisa diakses user.
+3. Backend return konfigurasi realtime stream (`mode=proxy_sse`, `streamPath=/api/v1/realtime/stream`).
+4. Dashboard membuka SSE ke backend dan menerima event status/lwt sesuai akses device user.
 
 ## 4.4 Kontrol Lampu (Signed Command)
 
 1. User klik ON/OFF pada device tertentu.
-2. Dashboard request `POST /api/v1/commands/sign` ke Worker.
-3. Worker validasi JWT + akses device, lalu menandatangani command envelope (HMAC).
-4. Worker simpan audit command ke D1.
-5. Dashboard publish envelope ke topic `home/{deviceId}/cmd`.
+2. Dashboard request `POST /api/v1/commands/execute` ke backend.
+3. Backend validasi JWT + akses device, lalu menandatangani command envelope (HMAC).
+4. Backend publish envelope ke topic `home/{deviceId}/cmd`.
+5. Backend simpan audit command ke MariaDB.
 6. ESP32 verifikasi `sig`, `expiresAt`, dan `nonce`.
 7. Jika valid, ESP32 kontrol relay dan publish status terbaru.
 
@@ -117,19 +119,19 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 
 1. ESP32 publish status ke `home/{deviceId}/status`.
 2. ESP32 publish LWT online/offline ke `home/{deviceId}/lwt`.
-3. Dashboard update UI langsung dari stream MQTT.
+3. Backend menerima event MQTT dan stream ke dashboard via SSE.
 4. `GET /api/v1/status` dipakai sebagai fallback non-realtime (opsional).
 
 ## 4.6 Penjadwalan Otomatis (Scheduler)
 
 1. User membuat jadwal ON/OFF per device via `POST /api/v1/schedules`.
-2. Worker validasi JWT + akses user-device + validasi cron dan timezone.
-3. Worker simpan rule jadwal ke D1 dan hitung `next_run_at`.
-4. Scheduler trigger Worker berjalan periodik (misalnya per menit) untuk mengambil jadwal jatuh tempo.
-5. Untuk setiap jadwal due, Worker membuat signed command envelope (HMAC) seperti command manual.
-6. Worker publish command schedule ke broker (MQTT over WSS) ke topic `home/{deviceId}/cmd`.
+2. Backend validasi JWT + akses user-device + validasi cron dan timezone.
+3. Backend simpan rule jadwal ke MariaDB dan hitung `next_run_at`.
+4. Scheduler process di backend berjalan periodik (misalnya per menit) untuk mengambil jadwal jatuh tempo.
+5. Untuk setiap jadwal due, backend membuat signed command envelope (HMAC) seperti command manual.
+6. Backend publish command schedule ke broker (MQTT over WSS) ke topic `home/{deviceId}/cmd`.
 7. ESP32 verifikasi signature, expiry, nonce, lalu eksekusi relay.
-8. Worker simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
+8. Backend simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
 
 ---
 
@@ -149,17 +151,17 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 
 ## 5.3 Payload Kontrak
 
-### Command Sign Request (Dashboard -> Worker)
+### Command Execute Request (Dashboard -> Backend)
 
 ```ts
-type CommandSignRequest = {
+type CommandExecuteRequest = {
   deviceId: string;
   action: "ON" | "OFF";
   requestId: string;
 };
 ```
 
-### Command Envelope (Worker -> Dashboard -> MQTT cmd topic)
+### Command Envelope (Backend -> MQTT cmd topic)
 
 ```ts
 type CommandEnvelope = {
@@ -214,7 +216,7 @@ type ScheduleRun = {
 
 ---
 
-# 6. API Contract Worker
+# 6. API Contract Backend
 
 ## 6.1 POST /api/v1/auth/login
 
@@ -232,22 +234,22 @@ Fungsi:
 
 Fungsi:
 - return daftar device user
-- return konfigurasi MQTT WSS untuk dashboard
+- return konfigurasi realtime stream backend untuk dashboard
 
 Response minimal:
 - `devices[]`
-- `mqtt.host`
-- `mqtt.port`
-- `mqtt.clientId`
-- `mqtt.topicPatterns`
+- `realtime.mode` (`proxy_sse`)
+- `realtime.streamPath` (`/api/v1/realtime/stream`)
 
 ## 6.4 POST /api/v1/commands/sign
 
 Fungsi:
-- validasi JWT
-- validasi akses user ke device
-- generate signed command envelope
-- simpan audit command
+- endpoint kompatibilitas untuk generate envelope bertanda tangan tanpa publish
+- tetap butuh validasi JWT + akses user-device
+
+Endpoint operasional utama:
+- `POST /api/v1/commands/execute` untuk sign + publish command ke broker dari backend
+- endpoint ini yang dipakai dashboard saat kontrol ON/OFF
 
 ## 6.5 Scheduler Endpoints
 
@@ -297,7 +299,7 @@ Tujuan:
 - `Content-Type: application/json`
 - `Authorization: Bearer <jwt_or_api_key>`
 - `X-Request-Id: <uuid>` (disarankan)
-- `Idempotency-Key: <uuid>` untuk request mutasi (`POST /commands/sign`, `POST /schedules`, `PATCH /schedules/{id}`, `DELETE /schedules/{id}`)
+- `Idempotency-Key: <uuid>` untuk request mutasi (`POST /commands/execute`, `POST /commands/sign`, `POST /schedules`, `PATCH /schedules/{id}`, `DELETE /schedules/{id}`)
 
 ### Mode Autentikasi Open Integration
 
@@ -356,141 +358,17 @@ Semua response JSON mengikuti envelope standar:
 
 ---
 
-# 7. Skema Database D1 (Revisi)
+# 7. Skema Database MariaDB (Revisi)
 
-```sql
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+Skema aktual berada di:
+- `backend/migrations-mariadb/0001_init.sql`
 
-CREATE TABLE devices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  device_id TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  location TEXT,
-  hmac_secret TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE user_devices (
-  user_id INTEGER NOT NULL,
-  device_id INTEGER NOT NULL,
-  role TEXT NOT NULL DEFAULT 'owner',
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (user_id, device_id),
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
-CREATE TABLE command_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  request_id TEXT NOT NULL,
-  user_id INTEGER NOT NULL,
-  device_id INTEGER NOT NULL,
-  action TEXT NOT NULL,
-  issued_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  result TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
-CREATE TABLE integration_clients (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  api_key_hash TEXT NOT NULL UNIQUE,
-  scopes TEXT NOT NULL,
-  is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE idempotency_records (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  route TEXT NOT NULL,
-  request_hash TEXT NOT NULL,
-  response_body TEXT NOT NULL,
-  status_code INTEGER NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE auth_sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  refresh_token_hash TEXT NOT NULL UNIQUE,
-  expires_at INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  last_used_at INTEGER,
-  rotated_at INTEGER,
-  revoked_at INTEGER,
-  replaced_by_session_id INTEGER,
-  user_agent TEXT,
-  ip_address TEXT,
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (replaced_by_session_id) REFERENCES auth_sessions(id)
-);
-
-CREATE TABLE rate_limit_hits (
-  rate_key TEXT PRIMARY KEY,
-  request_count INTEGER NOT NULL,
-  reset_at INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE device_schedules (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  device_id INTEGER NOT NULL,
-  action TEXT NOT NULL, -- ON | OFF
-  cron_expr TEXT NOT NULL,
-  timezone TEXT NOT NULL, -- IANA timezone
-  enabled INTEGER NOT NULL DEFAULT 1,
-  next_run_at INTEGER NOT NULL, -- unix epoch UTC
-  last_run_at INTEGER,
-  start_at INTEGER,
-  end_at INTEGER,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
-CREATE TABLE schedule_runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  schedule_id INTEGER NOT NULL,
-  device_id INTEGER NOT NULL,
-  planned_at INTEGER NOT NULL,
-  executed_at INTEGER,
-  request_id TEXT,
-  status TEXT NOT NULL, -- SUCCESS | FAILED | SKIPPED
-  error_message TEXT,
-  created_at TEXT NOT NULL,
-  UNIQUE(schedule_id, planned_at),
-  FOREIGN KEY (schedule_id) REFERENCES device_schedules(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
-CREATE INDEX idx_device_schedules_due
-ON device_schedules (enabled, next_run_at);
-
-CREATE INDEX idx_schedule_runs_schedule_id
-ON schedule_runs (schedule_id, planned_at);
-
-CREATE INDEX idx_auth_sessions_user_active
-ON auth_sessions (user_id, revoked_at, expires_at);
-
-CREATE INDEX idx_auth_sessions_expires
-ON auth_sessions (expires_at);
-
-CREATE INDEX idx_rate_limit_hits_reset
-ON rate_limit_hits (reset_at);
-```
+Entitas utama:
+- `users`, `auth_sessions`
+- `devices`, `user_devices`
+- `command_logs`
+- `device_schedules`, `schedule_runs`
+- `integration_clients`, `idempotency_records`, `rate_limit_hits`
 
 ---
 
@@ -500,14 +378,14 @@ ON rate_limit_hits (reset_at);
 
 - User auth memakai JWT.
 - Session auth menggunakan access token TTL pendek + refresh token rotation.
-- Authorisasi command selalu diverifikasi di Worker berdasarkan tabel `user_devices`.
+- Authorisasi command selalu diverifikasi di backend berdasarkan tabel `user_devices`.
 - Operasi schedule (`create/update/delete`) wajib melewati validasi akses user-device yang sama.
 
 ## 8.2 Shared Broker Credential (Keputusan Fase Ini)
 
-- Dashboard dan ESP32 bisa memakai credential broker yang sama.
-- Mitigasi wajib: command tidak boleh raw publish.
-- Semua command wajib berupa signed envelope dari Worker.
+- Hanya backend dan ESP32 yang memakai credential broker.
+- Frontend tidak menerima kredensial broker.
+- Semua command wajib dipublish dari backend dalam bentuk signed envelope.
 
 ## 8.3 Anti-Spoof dan Anti-Replay
 
@@ -519,26 +397,27 @@ ESP32 wajib reject command jika:
 
 ## 8.4 Secret Handling
 
-- JWT secret dan parameter HMAC disimpan di secret environment Worker.
-- HMAC secret per-device disimpan di D1 dan tidak boleh diekspos ke frontend.
+- JWT secret dan parameter HMAC disimpan di environment backend.
+- HMAC secret per-device disimpan di MariaDB dan tidak boleh diekspos ke frontend.
 
 ## 8.5 Password dan Rate Limit
 
-- Password user diverifikasi dengan `bcrypt` (`$2b$...`) di Worker.
+- Password user diverifikasi dengan `bcrypt` (`$2b$...`) di backend.
 - Legacy hash `SHA-256` masih didukung sementara untuk kompatibilitas seed lama, lalu auto-upgrade ke bcrypt setelah login sukses.
 - Rate limit wajib aktif minimal untuk:
   - `POST /api/v1/auth/login`
-  - `POST /api/v1/commands/sign`
+  - `POST /api/v1/commands/execute`
 - Error untuk limit terlampaui menggunakan code `RATE_LIMITED` + `retry-after`.
 
 ---
 
 # 9. Reliabilitas Realtime
 
-- Dashboard wajib auto-reconnect MQTT WSS.
-- Setelah reconnect, dashboard wajib resubscribe seluruh topic device.
-- Sinkron state awal memakai retained `status`/`lwt`.
-- Device offline dideteksi dari LWT.
+- Dashboard wajib auto-reconnect SSE ke endpoint backend.
+- Backend proxy realtime (Node runtime) wajib reconnect ke MQTT broker jika koneksi terputus.
+- Sinkron state awal dilakukan dari snapshot status DB saat stream dibuka.
+- Device offline dideteksi dari event LWT yang diteruskan backend.
+- Pada runtime Worker, realtime stream memakai fallback polling status DB.
 - Scheduler runner harus idempotent (mencegah eksekusi ganda pada menit yang sama).
 - Perhitungan jadwal harus berbasis timezone IANA untuk menangani DST secara konsisten.
 
@@ -546,42 +425,48 @@ ESP32 wajib reject command jika:
 
 # 10. Dukungan Deployment (Lokal + Cloudflare)
 
-Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
+Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 
-- Local development.
-- Cloudflare production.
+- Local development (2 port: backend + frontend Vite).
+- Local production (single port: backend + static frontend).
+- Cloudflare production (Worker + Pages + D1).
 
 ## 10.1 Local Development
 
-1. Inisialisasi backend Worker dengan template `Hono`.
-2. Inisialisasi frontend dashboard menggunakan `Vite`.
-3. Copy env lokal Worker dari `backend/.dev.vars.local.example` ke `backend/.dev.vars`.
-4. Copy env frontend dari `dashboard/.env.example` ke `dashboard/.env.local`.
-5. Jalankan API lokal: `wrangler dev --local --port 8787`.
-6. Jalankan frontend lokal: `npm run dev` (Vite, default port 5173).
-7. Set `VITE_API_BASE_URL=http://127.0.0.1:8787` untuk mode lokal.
-8. Jika perlu akses resource Cloudflare langsung saat development, gunakan `wrangler dev --remote`.
-9. Verifikasi alur login, sign command, publish MQTT WSS, dan update status realtime.
-10. Uji endpoint scheduler (`/api/v1/schedules`) dan simulasi eksekusi due schedule di environment lokal.
+1. Siapkan root env: `cp .env.example .env`.
+2. Generate env lokal turunan: `npm run env:local`.
+3. Jalankan migrasi MariaDB lokal: `npm run migrate:local`.
+4. Jalankan backend + frontend: `npm run dev`.
+5. Verifikasi alur login, execute command (`/api/v1/commands/execute`), dan update status realtime via SSE.
+6. Uji endpoint scheduler (`/api/v1/schedules`) dan simulasi eksekusi due schedule di environment lokal.
 
-## 10.2 Cloudflare Deployment
+## 10.2 Local Production (Single Port)
 
-1. Deploy API Hono Worker ke Cloudflare Workers: `wrangler deploy`.
-2. Build frontend Vite: `npm run build`.
-3. Deploy frontend ke Cloudflare Pages.
-4. Gunakan template env production Worker di `backend/.worker.production.env.example`.
-5. Bind D1 database dan secret environment di Worker.
-6. Set var non-secret (cookie/cors/rate-limit) dan secret (`JWT_SECRET`, `MQTT_*`, `HMAC_*`) menggunakan Wrangler.
-7. Aktifkan `Cron Triggers` pada Worker untuk scheduler runner periodik (misalnya setiap menit).
-8. Set `VITE_API_BASE_URL` ke URL Worker production.
-9. Verifikasi end-to-end pada domain production termasuk eksekusi jadwal otomatis.
+1. Siapkan root env: `cp .env.example .env`.
+2. Set `BACKEND_SERVE_DASHBOARD=true` dan `BACKEND_PORT` sesuai kebutuhan.
+3. Generate env production turunan: `npm run env:production`.
+4. Jalankan migrasi MariaDB production: `npm run migrate:production`.
+5. Build frontend Vite: `npm run build`.
+6. Jalankan server production: `npm run start:production`.
+7. Verifikasi endpoint API dan halaman dashboard pada satu origin/port yang sama.
 
-## 10.3 Metode Verifikasi Wajib
+## 10.3 Cloudflare Deployment
+
+1. Gunakan konfigurasi Worker pada `backend/wrangler.toml`.
+2. Pastikan binding D1 dan cron trigger sudah sesuai.
+3. Set vars/secrets Worker dari root `.env` (dibantu `scripts/deploy-worker.sh`).
+4. Jalankan migrasi D1 remote: `npm run migrate:remote`.
+5. Deploy Worker: `npm run deploy:worker`.
+6. Deploy Pages: `npm run deploy:pages` (set `FRONTEND_VITE_API_BASE_URL` ke URL Worker production).
+7. Verifikasi end-to-end pada URL production.
+
+## 10.4 Metode Verifikasi Wajib
 
 - Semua verifikasi UI dan E2E dilakukan menggunakan `Playwright MCP`.
-- Verifikasi dilakukan minimal pada 2 target:
-  - local environment
-  - production Cloudflare
+- Verifikasi dilakukan minimal pada 3 target:
+  - local development
+  - local production single port
+  - cloudflare production
 - Hasil verifikasi wajib menyertakan evidence pass/fail per skenario.
 
 ---
@@ -589,10 +474,11 @@ Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
 # 11. Kriteria Sukses
 
 - Multi-device berfungsi dengan topic pattern dinamis.
-- Realtime update berjalan via MQTT WSS tanpa polling utama.
-- Worker tidak menjadi long-lived MQTT bridge.
+- Realtime update dashboard berjalan via SSE backend proxy.
+- Backend realtime proxy MQTT stabil pada Node runtime.
+- Runtime Worker tetap berfungsi dengan fallback polling status.
 - Command tanpa signature ditolak di firmware.
-- Audit command tersimpan di D1.
+- Audit command tersimpan di MariaDB.
 - Scheduler otomatis ON/OFF berjalan stabil berbasis cron + timezone.
 - Open Integration API v1 tersedia dengan kontrak stabil dan endpoint discovery.
 - OpenAPI JSON tersedia di `/api/v1/openapi.json`.
@@ -625,16 +511,17 @@ Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
 - [ ] Publish `status` retained setelah setiap perubahan state.
 - [ ] Konfigurasi LWT `ONLINE/OFFLINE`.
 
-## 13.3 PHASE 3 - Backend Worker (Hono)
+## 13.3 PHASE 3 - Backend Node.js (Hono)
 
 - [x] Scaffold backend pakai Hono (`npm create hono@latest`).
-- [x] Konfigurasi target Cloudflare Workers + Wrangler.
-- [x] Setup binding D1 di konfigurasi Worker.
-- [x] Pastikan API bisa jalan lokal via `wrangler dev --local --port 8787`.
+- [x] Konfigurasi runtime Node.js untuk backend Hono.
+- [x] Setup koneksi MariaDB dan migrasi otomatis.
+- [x] Pastikan API bisa jalan lokal via server Node (`PORT=8787`).
 - [x] Implement route v1 `POST /api/v1/auth/login` + JWT.
 - [x] Implement route v1 `POST /api/v1/auth/refresh` + refresh token rotation.
-- [x] Implement route v1 `GET /api/v1/bootstrap` (device list + MQTT config).
+- [x] Implement route v1 `GET /api/v1/bootstrap` (device list + realtime stream config).
 - [x] Implement route v1 `POST /api/v1/commands/sign`.
+- [x] Implement route v1 `POST /api/v1/commands/execute`.
 - [x] Implement route v1 `POST /api/v1/schedules`.
 - [x] Implement route v1 `GET /api/v1/schedules`.
 - [x] Implement route v1 `GET /api/v1/schedules/{scheduleId}`.
@@ -647,7 +534,7 @@ Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
 - [x] Implement endpoint integrasi `GET /api/v1/devices/{deviceId}`.
 - [x] Implement endpoint integrasi `GET /api/v1/devices/{deviceId}/status`.
 - [x] Implement `GET /api/v1/openapi.json`.
-- [x] Implement scheduler runner pada Worker Cron Trigger.
+- [x] Implement scheduler runner pada process backend (interval periodik).
 - [x] Implement kalkulasi `next_run_at` (cron + timezone IANA).
 - [x] Implement log eksekusi jadwal ke `schedule_runs`.
 - [x] Implement publish command schedule ke topic `home/{deviceId}/cmd`.
@@ -659,30 +546,30 @@ Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
 ## 13.4 PHASE 4 - Dashboard Frontend (Vite)
 
 - [x] Scaffold frontend pakai Vite (`npm create vite@latest`).
-- [x] Setup env var API base URL dan MQTT config.
+- [x] Setup env var API base URL dari root shared env.
 - [x] Pastikan dashboard bisa jalan lokal via `npm run dev` dan hit API lokal.
 - [x] Halaman login + secure token handling.
 - [x] Device list dinamis multi-device.
-- [x] MQTT WSS client + auto reconnect.
-- [x] Subscribe status/lwt sesuai akses user.
-- [x] Request sign command ke Worker lalu publish ke broker.
+- [x] SSE realtime client + auto reconnect.
+- [x] Subscribe status/lwt via endpoint backend `/api/v1/realtime/stream`.
+- [x] Request execute command ke backend (`/api/v1/commands/execute`).
 - [x] Tampilkan ack status dan offline indicator per device.
 - [x] Tambahkan UI manajemen jadwal (buat/list/edit/hapus jadwal).
 - [x] Tampilkan status next run dan riwayat eksekusi schedule di dashboard.
 
 ## 13.5 PHASE 5 - Security Hardening
 
-- [x] Password hash kuat (Argon2/Bcrypt di Worker pipeline).
+- [x] Password hash kuat (Bcrypt di backend pipeline).
 - [x] JWT expiry pendek + refresh policy sesuai kebutuhan.
 - [x] CORS restrict hanya origin dashboard.
-- [x] Rate limit endpoint auth/sign.
-- [x] Simpan semua secret di environment Worker.
+- [x] Rate limit endpoint auth/command.
+- [x] Simpan semua secret di environment backend.
 
 ## 13.6 PHASE 6 - Testing dan Validasi
 
 - [x] Semua test UI/E2E dijalankan via Playwright MCP (bukan verifikasi manual saja).
-- [x] Test local mode: dashboard Vite + API Hono (`wrangler dev`) berjalan end-to-end.
-- [ ] Test cloud mode: deploy Worker + Pages dan verifikasi end-to-end.
+- [x] Test local mode: dashboard Vite + API Hono (Node.js) berjalan end-to-end.
+- [ ] Test production-local mode (single port) dan verifikasi end-to-end.
 - [x] Verifikasi kontrak Open Integration API v1 (status code, envelope JSON, error code).
 - [x] Verifikasi endpoint `GET /api/v1/openapi.json` dapat diakses dan valid.
 - [x] Verifikasi API key scope membatasi akses endpoint sesuai role.
@@ -694,7 +581,7 @@ Arsitektur ini wajib didukung pada dua mode deploy dengan codebase yang sama:
 - [ ] Verifikasi retry dan dedup mencegah double-execution (`schedule_runs` unik per slot waktu).
 - [x] Login benar/salah.
 - [ ] Token expired.
-- [ ] User A tidak bisa sign command device User B.
+- [ ] User A tidak bisa execute command device User B.
 - [ ] Signature tampered ditolak ESP32.
 - [ ] Replay command ditolak (nonce/expiry).
 - [ ] Device offline tampil realtime dari LWT.
@@ -707,7 +594,7 @@ Catatan verifikasi terakhir:
 - Tanggal: 16 February 2026 (local).
 - Tool: Playwright MCP.
 - Evidence screenshot local: tersimpan pada output sesi Playwright MCP runner (artefak sesi, tidak disimpan permanen di root repo).
-- Verifikasi tambahan API local: API key scope, idempotency replay/mismatch, rate-limit auth/sign, dan refresh token rotation (lihat `PLAYWRIGHT_VERIFICATION.md`).
+- Verifikasi tambahan API local: API key scope, idempotency replay/mismatch, rate-limit auth/command, dan refresh token rotation (lihat `PLAYWRIGHT_VERIFICATION.md`).
 - Cloud verification belum dijalankan karena URL production belum disediakan pada sesi ini.
 
 ---
@@ -717,36 +604,40 @@ Catatan verifikasi terakhir:
 - [x] Semua endpoint utama tersedia dan terdokumentasi.
 - [x] Multi-device berjalan tanpa hardcoded topic.
 - [x] Signed command diberlakukan end-to-end.
-- [ ] Dashboard realtime via MQTT WSS stabil.
+- [ ] Dashboard realtime via SSE backend stabil.
 - [x] Manajemen jadwal otomatis berfungsi (create/edit/delete/pause/resume).
-- [x] Scheduler Cron Trigger mengeksekusi command terjadwal sesuai timezone.
-- [x] API berjalan di Hono Worker dan frontend dibangun via Vite.
-- [ ] Deployment lokal dan deployment Cloudflare sama-sama lulus smoke test.
+- [x] Scheduler interval backend mengeksekusi command terjadwal sesuai timezone.
+- [x] API berjalan di Hono Node.js dan frontend dibangun via Vite.
+- [ ] Deployment lokal (dev + production single port) lulus smoke test.
+- [ ] Deployment cloudflare (Worker + Pages) lulus smoke test.
 - [ ] Verifikasi E2E local + cloud lulus melalui Playwright MCP.
 - [x] Open Integration API v1 terdokumentasi dan lulus contract verification.
-- [x] Audit command tersimpan di D1.
+- [x] Audit command tersimpan di MariaDB.
 - [ ] Demo end-to-end berjalan penuh di jalur free tier.
 
 ---
 
-# 15. Verifikasi MQTT via WebSocket (Cloudflare <-> HiveMQ)
+# 15. Verifikasi MQTT via WebSocket (Node.js/Cloudflare <-> HiveMQ)
 
 Status verifikasi: `DIDUKUNG` dengan konfigurasi yang benar.
 
 Ringkasan teknis:
 - HiveMQ menyediakan endpoint TLS WebSocket untuk client web.
 - HiveMQ broker mendukung listener MQTT over WebSocket dan subprotocol MQTT.
-- Cloudflare Workers mendukung WebSocket client (`new WebSocket(...)`) dan upgrade `ws/wss` via `fetch` extension.
-- Outbound WebSocket dari Worker mengikuti limit koneksi HTTP per invocation (maksimal 6 koneksi simultan).
+- Runtime Node.js mendukung WebSocket client (`new WebSocket(...)`) untuk MQTT over WSS.
+- Cloudflare Workers juga mendukung WebSocket client untuk koneksi `wss://`.
+- Outbound WebSocket backend perlu dibatasi concurrency agar stabil pada scheduler.
 
 Implikasi arsitektur:
-- `Cloudflare Pages (browser) -> HiveMQ (WSS)` didukung untuk realtime dashboard.
-- `Cloudflare Worker Scheduler -> HiveMQ (WSS)` didukung untuk publish command terjadwal, selama client/protokol MQTT di Worker kompatibel.
+- `Browser dashboard -> Backend SSE` dipakai untuk realtime dashboard.
+- `Backend Node.js -> HiveMQ (WSS)` dipakai untuk proxy status/lwt dan publish command.
+- `Cloudflare Worker -> HiveMQ (WSS)` dipakai untuk publish command (tanpa long-lived subscribe).
 
 Guardrails implementasi:
 - Gunakan endpoint `wss://` resmi dari HiveMQ cluster.
 - Gunakan subprotocol MQTT yang sesuai (`mqtt`/`mqttv3.1`) bila diperlukan listener broker.
-- Hindari desain Worker sebagai long-lived bridge; gunakan koneksi pendek per eksekusi schedule.
+- Node runtime boleh memakai long-lived MQTT subscribe untuk proxy realtime.
+- Runtime Worker tetap gunakan model non long-lived (publish per request + SSE fallback polling DB).
 
 ---
 

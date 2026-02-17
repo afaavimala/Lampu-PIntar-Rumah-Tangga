@@ -67,12 +67,16 @@ export async function runDueSchedules(env: EnvBindings) {
 async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise<'processed' | 'failed' | 'skipped'> {
   const plannedAt = row.next_run_at
 
-  const insertRun = await env.DB
-    .prepare(
-      `INSERT OR IGNORE INTO schedule_runs
+  const insertSql = env.DB.dialect === 'mariadb'
+    ? `INSERT IGNORE INTO schedule_runs
        (schedule_id, device_id, planned_at, status, created_at)
-       VALUES (?, ?, ?, 'SKIPPED', ?)`,
-    )
+       VALUES (?, ?, ?, 'SKIPPED', ?)`
+    : `INSERT OR IGNORE INTO schedule_runs
+       (schedule_id, device_id, planned_at, status, created_at)
+       VALUES (?, ?, ?, 'SKIPPED', ?)`
+
+  const insertRun = await env.DB
+    .prepare(insertSql)
     .bind(row.schedule_id, row.device_internal_id, plannedAt, new Date().toISOString())
     .run()
 

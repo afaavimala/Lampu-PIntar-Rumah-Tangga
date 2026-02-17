@@ -1,92 +1,95 @@
 # Lampu Pintar Rumah Tangga
 
-MVP SmartLamp IoT berbasis `ESP32 + HiveMQ + Cloudflare` dengan stack wajib:
-- Backend: `Hono` di Cloudflare Workers.
-- Frontend: `Vite + React + TypeScript`.
-- Database: `Cloudflare D1`.
-- Realtime: MQTT over WebSocket (`WSS`) untuk dashboard.
-- Scheduler: Worker `Cron Trigger` per menit.
+MVP SmartLamp IoT berbasis `ESP32 + HiveMQ + Hono + Vite` dengan dual deployment:
+- Lokal: Node.js + MariaDB.
+- Cloudflare: Worker + D1.
 
-Single source of truth arsitektur dan TODO: `Dokumentasi_Utama_SmartLamp_IoT.md`.
+Stack saat ini:
+- Backend: `Hono` (Node runtime untuk lokal, Worker runtime untuk Cloudflare).
+- Frontend: `Vite + React + TypeScript`.
+- Database: `MariaDB` (lokal) / `Cloudflare D1` (cloud).
+- Realtime: MQTT proxy di backend, frontend consume SSE (`/api/v1/realtime/stream`).
+- Scheduler: interval in-process (lokal) / Cron Trigger Worker (cloud).
+
+Catatan runtime realtime:
+- Node lokal: SSE disuplai dari subscriber MQTT backend (event status/lwt broker).
+- Cloudflare Worker: SSE fallback polling status DB (tanpa kredensial MQTT di frontend).
 
 ## Arsitektur Ringkas
 
 ```text
-ESP32 -- MQTT TLS --> HiveMQ Broker <-- MQTT WSS -- Dashboard (Vite/Pages)
-                          ^
-                          |
-            Cloudflare Worker (Hono): auth, signing, schedules, API v1
+ESP32 -- MQTT TLS --> HiveMQ Broker <-- MQTT WSS --> Node.js + Hono API
+                                                     |      ^
+                                                     |      |
+                                    Dashboard (browser) -- SSE (/api/v1/realtime/stream)
                           |
                           v
-                       D1 Database
+                       MariaDB
 ```
+
+Mode production lokal (single port):
+- Frontend dibuild ke `dashboard/dist`.
+- Backend Node melayani API + file frontend di port yang sama (`PORT`, default `8080`).
+
+Mode cloudflare:
+- Backend deploy ke Worker (`backend/src/index.ts`).
+- Frontend deploy ke Pages.
 
 ## Struktur Repo
 
 ```text
-backend/    # Hono Worker + D1 migrations + scheduler + API v1
- dashboard/ # Vite React dashboard + MQTT WSS client
-Dokumentasi_Utama_SmartLamp_IoT.md
-PLAYWRIGHT_VERIFICATION.md
+backend/    # Hono API (Node + Worker), migrasi MariaDB & D1
+dashboard/  # Vite React dashboard + realtime SSE client
+scripts/    # script setup/build/deploy lokal + cloud
 ```
-
-## Fitur MVP yang Sudah Diimplementasi
-
-- Auth login/refresh/logout berbasis cookie `HttpOnly`.
-- Access token TTL pendek + refresh token rotation per request refresh.
-- Bootstrap session (`devices + mqtt config`).
-- Command signing (`POST /api/v1/commands/sign`) dengan HMAC envelope.
-- Schedule CRUD + run history.
-- Scheduler runner via Cron trigger + publish MQTT WSS dari Worker.
-- Open integration API v1 + endpoint discovery + OpenAPI JSON.
-- Dashboard login, device card, kontrol ON/OFF, manajemen jadwal, run history.
-- Password verification hardening dengan `bcrypt` (+ auto-upgrade legacy hash).
-- Rate limit untuk `POST /api/v1/auth/login` dan `POST /api/v1/commands/sign`.
-- Verifikasi lokal via Playwright MCP (evidence di `PLAYWRIGHT_VERIFICATION.md`).
 
 ## Prasyarat
 
 - Node.js 20+
 - npm
-- Cloudflare Wrangler CLI (sudah sebagai dev dependency backend)
+- MariaDB server aktif
 
 ## Root Commands
-
-Semua command sekarang bisa dijalankan dari root project:
 
 ```bash
 # install backend + dashboard
 npm run install:all
 
-# copy env local jika belum ada
+# siapkan env untuk development / production
 npm run env:local
+npm run env:production
 
-# migrate D1 local / remote
+# migrasi database MariaDB
 npm run migrate:local
+npm run migrate:production
+
+# migrasi database D1 cloud
 npm run migrate:remote
 
-# setup local lengkap (install + env + migrate)
+# setup cepat
 npm run setup:local
+npm run setup:production
 
-# jalankan backend + dashboard bersamaan
+# development mode (backend :8787 + dashboard :5173)
 npm run dev
 
-# validasi/build semua
+# validasi/build
 npm run build
 
-# deploy worker/pages/all
+# production single port
+npm run start:production
+
+# flow deploy lokal (migrate + build + start)
+npm run deploy:local
+npm run deploy
+
+# deploy cloudflare (worker + pages)
 npm run deploy:worker
 npm run deploy:pages
-npm run deploy
+npm run deploy:cloud
 ```
 
-Catatan:
-- `npm run deploy:pages` pakai project default `smartlamp-dashboard`.
-- Untuk ganti project Pages: `CF_PAGES_PROJECT=nama-project npm run deploy:pages`.
-- Untuk deploy Pages production, set minimal `VITE_API_BASE_URL` agar tidak ikut URL local saat build.
-- Untuk override env backend/frontend dari root, gunakan `.env` (template: `.env.example`) lalu jalankan `npm run env:local`.
-
-## Setup Lokal
+## Setup Development Lokal
 
 1. Install dependency:
 
@@ -94,79 +97,160 @@ Catatan:
 npm run install:all
 ```
 
-2. Siapkan env:
+2. Siapkan root env (single source of truth):
 
 ```bash
-# opsional: siapkan override root
 cp .env.example .env
+```
 
-# sinkron ke backend/.dev.vars + dashboard/.env.local
+3. Edit `.env`:
+- Gunakan parameter shared: `BACKEND_*` dan `FRONTEND_*`
+- MariaDB credential wajib: `BACKEND_DB_HOST`, `BACKEND_DB_PORT`, `BACKEND_DB_USER`, `BACKEND_DB_PASSWORD`, `BACKEND_DB_NAME`
+- Secret wajib: `BACKEND_JWT_SECRET`, `BACKEND_HMAC_GLOBAL_FALLBACK_SECRET`
+- MQTT wajib: `BACKEND_MQTT_WS_URL`, `BACKEND_MQTT_USERNAME`, `BACKEND_MQTT_PASSWORD`
+
+4. Generate file env lokal dari root `.env`:
+
+```bash
 npm run env:local
 ```
 
-3. Terapkan migrasi D1 lokal:
+5. Migrasi database:
 
 ```bash
 npm run migrate:local
 ```
 
-4. Jalankan backend:
-
-```bash
-npm run dev:backend
-```
-
-5. Jalankan frontend:
-
-```bash
-npm run dev:dashboard
-```
-
-Atau langsung jalankan keduanya:
+6. Jalankan backend + dashboard:
 
 ```bash
 npm run dev
 ```
 
-Seed default lokal:
-- Email: `admin@example.com`
-- Password: `admin12345`
-- Demo API key plaintext: `demo-integration-key`
+Default dev URL:
+- Frontend: `http://127.0.0.1:5173`
+- Backend API: `http://127.0.0.1:8787`
 
-## Environment Variables
+## Deploy Production Lokal (Single Port)
 
-Backend (`backend/.dev.vars`):
-- `JWT_SECRET`
-- `HMAC_GLOBAL_FALLBACK_SECRET` (opsional fallback)
-- `MQTT_WS_URL`
-- `MQTT_USERNAME`
-- `MQTT_PASSWORD`
-- `MQTT_CLIENT_ID_PREFIX`
-- `JWT_ACCESS_TTL_SEC`
-- `JWT_REFRESH_TTL_SEC`
-- `COOKIE_SECURE`
-- `COOKIE_SAME_SITE`
-- `COOKIE_DOMAIN`
-- `CORS_ORIGINS` (comma-separated)
-- `AUTH_LOGIN_RATE_LIMIT_MAX`
-- `AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC`
-- `COMMAND_SIGN_RATE_LIMIT_MAX`
-- `COMMAND_SIGN_RATE_LIMIT_WINDOW_SEC`
-- `SEED_ADMIN_EMAIL`
-- `SEED_ADMIN_PASSWORD`
-- `SEED_SAMPLE_DEVICE_ID`
+1. Install dependency + siapkan root env:
 
-Contoh file:
-- Root override template: `.env.example`
-- Local dev: `backend/.dev.vars.local.example`
-- Worker production reference: `backend/.worker.production.env.example`
+```bash
+npm run install:all
+cp .env.example .env
+```
 
-Frontend (`dashboard/.env.local`):
-- `VITE_API_BASE_URL`
-- `VITE_MQTT_WS_URL`
-- `VITE_MQTT_USERNAME`
-- `VITE_MQTT_PASSWORD`
-- `VITE_MQTT_CLIENT_ID_PREFIX`
+2. Edit `.env` untuk production lokal:
+- `BACKEND_PORT` (misal `8080`)
+- `BACKEND_SERVE_DASHBOARD=true`
+- `BACKEND_DB_*` untuk MariaDB production
+- `BACKEND_SEED_ADMIN_PASSWORD` (ganti dari default)
+- `FRONTEND_VITE_API_BASE_URL=` (kosong untuk mode 1 port)
+
+3. Generate env production dari root `.env`:
+
+```bash
+npm run env:production
+```
+
+4. Migrasi database production:
+
+```bash
+npm run migrate:production
+```
+
+5. Build frontend + validasi:
+
+```bash
+npm run build
+```
+
+6. Jalankan production:
+
+```bash
+npm run start:production
+```
+
+Catatan shared-only:
+- Nilai `BACKEND_*` dan `FRONTEND_*` dipakai untuk local dev, local production, dan cloud.
+- Jika ingin nilai berbeda antar mode, edit `.env` lalu jalankan ulang `npm run env:local` atau `npm run env:production`.
+
+App dapat diakses di:
+- `http://127.0.0.1:8080` (atau sesuai `PORT`)
+
+API health check:
+- `GET /api/health`
+
+## Deploy Cloudflare (Tetap Didukung)
+
+1. Siapkan root env:
+
+```bash
+cp .env.example .env
+npm run env:production
+```
+
+Key utama di `.env`:
+- Worker/D1: `CF_D1_DATABASE_NAME`, `CF_WORKER_ENV`
+- Worker vars/secrets: `BACKEND_*` (sinkron ke Worker saat deploy)
+- Pages build vars: `FRONTEND_*`
+- Pages deploy target: `CF_PAGES_PROJECT`, `CF_PAGES_BRANCH`
+
+2. Pastikan `backend/wrangler.toml` sudah benar:
+- binding D1 (`[[d1_databases]]`)
+- cron trigger (`[triggers]`)
+
+3. Jalankan migrasi D1 remote:
+
+```bash
+npm run migrate:remote
+```
+
+4. Deploy Worker:
+
+```bash
+npm run deploy:worker
+```
+
+Catatan:
+- `CF_WORKER_SYNC_SECRETS=true` akan sinkron secret via `wrangler secret put`.
+- `CF_WORKER_KEEP_VARS=true` mencegah var existing di dashboard terhapus.
+- `CF_WORKER_DRY_RUN=true` untuk verifikasi command deploy tanpa publish.
+
+5. Deploy Pages:
+
+```bash
+npm run deploy:pages
+```
+
+## Environment Files
+
+- Root override tunggal (source of truth): `.env` (buat dari `.env.example`)
+- Generated lokal:
+  - `backend/.env.local`
+  - `dashboard/.env.local`
+  - `backend/.dev.vars.local`
+- Generated production:
+  - `backend/.env.production`
+  - `dashboard/.env.production`
+  - `backend/.worker.production.env`
+- Template:
+  - `backend/.env.local.example`
+  - `backend/.env.production.example`
+  - `backend/.dev.vars.local.example`
+  - `backend/.worker.production.env.example`
+  - `dashboard/.env.example`
+  - `dashboard/.env.production.example`
+
+## Seed Default
+
+Migrasi MariaDB akan memastikan seed default:
+- Admin email (default): `admin@example.com`
+- Admin password (default): `admin12345` (ubah di env production)
+- Sample device (default): `lampu-ruang-tamu`
+- Demo API key (default): `demo-integration-key`
+
+Semua nilai seed bisa diubah via env `SEED_*` di backend env file.
 
 ## API v1
 
@@ -177,7 +261,9 @@ Auth:
 
 Core:
 - `GET /api/v1/bootstrap`
-- `POST /api/v1/commands/sign`
+- `POST /api/v1/commands/execute` (utama, dipakai dashboard)
+- `POST /api/v1/commands/sign` (opsional kompatibilitas)
+- `GET /api/v1/realtime/stream` (SSE)
 - `GET /api/v1/status`
 
 Schedules:
@@ -211,67 +297,3 @@ Frontend:
 cd dashboard
 npm run build
 ```
-
-E2E/UI verification: gunakan Playwright MCP. Ringkasan hasil lokal ada di `PLAYWRIGHT_VERIFICATION.md`.
-
-## Deploy Cloudflare
-
-Backend Worker:
-
-```bash
-npm run deploy:worker
-```
-
-Frontend Pages:
-
-```bash
-VITE_API_BASE_URL=https://your-worker.your-subdomain.workers.dev npm run deploy:pages
-```
-
-Deploy semua:
-
-```bash
-npm run deploy
-```
-
-Wajib setelah deploy:
-- Bind D1 production di `wrangler.toml`.
-- Set Worker vars/secrets production.
-- Aktifkan `Cron Trigger` (`* * * * *`).
-- Set `VITE_API_BASE_URL` ke URL Worker production.
-
-Contoh set vars/secrets di Worker production:
-
-```bash
-cd backend
-
-# Vars non-secret (boleh di wrangler.toml [vars] atau CLI --var)
-# JWT_ACCESS_TTL_SEC=900
-# JWT_REFRESH_TTL_SEC=2592000
-# COOKIE_SECURE=true
-# COOKIE_SAME_SITE=None
-# COOKIE_DOMAIN=yourdomain.com
-# CORS_ORIGINS=https://your-dashboard.pages.dev
-# AUTH_LOGIN_RATE_LIMIT_MAX=5
-# AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC=60
-# COMMAND_SIGN_RATE_LIMIT_MAX=20
-# COMMAND_SIGN_RATE_LIMIT_WINDOW_SEC=60
-
-# Secrets
-echo 'replace-me-jwt-secret' | npx wrangler secret put JWT_SECRET
-echo 'replace-me-hmac-secret' | npx wrangler secret put HMAC_GLOBAL_FALLBACK_SECRET
-echo 'wss://your-cluster.s1.eu.hivemq.cloud:8884/mqtt' | npx wrangler secret put MQTT_WS_URL
-echo 'mqtt-username' | npx wrangler secret put MQTT_USERNAME
-echo 'mqtt-password' | npx wrangler secret put MQTT_PASSWORD
-echo 'admin12345' | npx wrangler secret put SEED_ADMIN_PASSWORD
-```
-
-Catatan cookie production:
-- Jika frontend dan worker beda site (`pages.dev` vs `workers.dev`), gunakan `COOKIE_SECURE=true` dan `COOKIE_SAME_SITE=None`.
-- Jika pakai custom domain same-site, `COOKIE_SAME_SITE=Strict` tetap bisa dipakai.
-
-## Catatan Penting MQTT WSS
-
-- Cloudflare Pages (browser) ke HiveMQ via `wss://` didukung.
-- Cloudflare Worker scheduler ke HiveMQ via `wss://` juga didukung (koneksi pendek per eksekusi).
-- Untuk lulus realtime end-to-end, wajib isi credential HiveMQ yang valid (bukan placeholder).

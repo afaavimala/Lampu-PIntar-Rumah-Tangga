@@ -18,7 +18,9 @@ openApiRoutes.get('/openapi.json', (c) => {
       '/api/v1/auth/logout': { post: { summary: 'Logout user' } },
       '/api/v1/bootstrap': { get: { summary: 'Bootstrap dashboard session' } },
       '/api/v1/commands/sign': { post: { summary: 'Create signed command envelope' } },
+      '/api/v1/commands/execute': { post: { summary: 'Sign and publish command via backend proxy' } },
       '/api/v1/status': { get: { summary: 'Fallback status list' } },
+      '/api/v1/realtime/stream': { get: { summary: 'Realtime stream (SSE proxy from backend)' } },
       '/api/v1/schedules': {
         get: { summary: 'List schedules' },
         post: { summary: 'Create schedule' },

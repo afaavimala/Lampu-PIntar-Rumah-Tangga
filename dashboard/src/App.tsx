@@ -4,15 +4,15 @@ import {
   bootstrap,
   createSchedule,
   deleteSchedule,
+  executeCommand,
   getFallbackStatus,
   listScheduleRuns,
   listSchedules,
   login,
   logout,
   patchSchedule,
-  signCommand,
 } from './lib/api'
-import { createRealtimeClient, type RealtimeClient } from './lib/mqtt'
+import { createRealtimeClient, type RealtimeClient } from './lib/realtime'
 import type { BootstrapResponse, Device, ScheduleRule, ScheduleRun } from './lib/types'
 import { DeviceCard, type DeviceState } from './components/DeviceCard'
 import { LoginForm } from './components/LoginForm'
@@ -45,7 +45,7 @@ export default function App() {
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null)
   const [scheduleRuns, setScheduleRuns] = useState<ScheduleRun[]>([])
 
-  const mqttRef = useRef<RealtimeClient | null>(null)
+  const realtimeRef = useRef<RealtimeClient | null>(null)
 
   const isLoggedIn = initialized && hasSession
 
@@ -61,17 +61,12 @@ export default function App() {
     const scheduleData = await listSchedules()
     setSchedules(scheduleData)
 
-    if (mqttRef.current) {
-      mqttRef.current.resubscribe(bootstrapData.devices.map((device) => device.id))
+    if (realtimeRef.current) {
+      realtimeRef.current.resubscribe(bootstrapData.devices.map((device) => device.id))
       return
     }
 
-    if (!bootstrapData.mqtt?.wsUrl) {
-      setGlobalError('MQTT WSS URL belum dikonfigurasi. Realtime tidak aktif.')
-      return
-    }
-
-    mqttRef.current = createRealtimeClient(bootstrapData.mqtt, bootstrapData.devices.map((device) => device.id), {
+    realtimeRef.current = createRealtimeClient(bootstrapData.devices.map((device) => device.id), {
       onStatus: (deviceId, payload) => {
         setDeviceState((prev) => {
           const previous = prev[deviceId] ?? {
@@ -112,7 +107,7 @@ export default function App() {
         }))
       },
       onError: (error) => {
-        setGlobalError(`MQTT error: ${error.message}`)
+        setGlobalError(`Realtime stream error: ${error.message}`)
       },
     })
   }
@@ -139,9 +134,9 @@ export default function App() {
 
     return () => {
       mounted = false
-      if (mqttRef.current) {
-        void mqttRef.current.disconnect()
-        mqttRef.current = null
+      if (realtimeRef.current) {
+        void realtimeRef.current.disconnect()
+        realtimeRef.current = null
       }
     }
   }, [])
@@ -171,9 +166,9 @@ export default function App() {
       setSchedules([])
       setScheduleRuns([])
       setSelectedScheduleId(null)
-      if (mqttRef.current) {
-        await mqttRef.current.disconnect()
-        mqttRef.current = null
+      if (realtimeRef.current) {
+        await realtimeRef.current.disconnect()
+        realtimeRef.current = null
       }
     } finally {
       setLoading(false)
@@ -183,18 +178,12 @@ export default function App() {
   async function handleAction(deviceId: string, action: 'ON' | 'OFF') {
     setGlobalError(null)
     try {
-      const envelope = await signCommand({
+      await executeCommand({
         deviceId,
         action,
         requestId: crypto.randomUUID(),
         idempotencyKey: crypto.randomUUID(),
       })
-
-      if (!mqttRef.current) {
-        throw new Error('MQTT client belum terhubung')
-      }
-
-      await mqttRef.current.publishSignedCommand(envelope)
       setDeviceState((prev) => ({
         ...prev,
         [deviceId]: {

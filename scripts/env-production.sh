@@ -4,17 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/root-env.sh"
 
-BACKEND_ENV_FILE="$ROOT_DIR/backend/.env.local"
-FRONTEND_ENV_FILE="$ROOT_DIR/dashboard/.env.local"
+BACKEND_ENV_FILE="$ROOT_DIR/backend/.env.production"
+FRONTEND_ENV_FILE="$ROOT_DIR/dashboard/.env.production"
+WORKER_PROD_ENV_FILE="$ROOT_DIR/backend/.worker.production.env"
 
-WORKER_DEV_VARS_FILE="$ROOT_DIR/backend/.dev.vars.local"
+copy_if_missing "$ROOT_DIR/backend/.env.production.example" "$BACKEND_ENV_FILE" "env-production"
+copy_if_missing "$ROOT_DIR/dashboard/.env.production.example" "$FRONTEND_ENV_FILE" "env-production"
+copy_if_missing "$ROOT_DIR/backend/.worker.production.env.example" "$WORKER_PROD_ENV_FILE" "env-production"
 
-copy_if_missing "$ROOT_DIR/backend/.env.local.example" "$BACKEND_ENV_FILE" "env-local"
-copy_if_missing "$ROOT_DIR/dashboard/.env.example" "$FRONTEND_ENV_FILE" "env-local"
-copy_if_missing "$ROOT_DIR/backend/.dev.vars.local.example" "$WORKER_DEV_VARS_FILE" "env-local"
-
-if load_root_env "env-local"; then
-  apply_env_mappings "env-local" "$BACKEND_ENV_FILE" \
+if load_root_env "env-production"; then
+  apply_env_mappings "env-production" "$BACKEND_ENV_FILE" \
     "PORT:BACKEND_PORT" \
     "SERVE_DASHBOARD:BACKEND_SERVE_DASHBOARD" \
     "FRONTEND_DIST_DIR:BACKEND_FRONTEND_DIST_DIR" \
@@ -50,10 +49,10 @@ if load_root_env "env-local"; then
     "SEED_SAMPLE_DEVICE_HMAC_SECRET:BACKEND_SEED_SAMPLE_DEVICE_HMAC_SECRET" \
     "SEED_DEMO_API_KEY:BACKEND_SEED_DEMO_API_KEY"
 
-  apply_env_mappings "env-local" "$FRONTEND_ENV_FILE" \
+  apply_env_mappings "env-production" "$FRONTEND_ENV_FILE" \
     "VITE_API_BASE_URL:FRONTEND_VITE_API_BASE_URL"
 
-  apply_env_mappings "env-local" "$WORKER_DEV_VARS_FILE" \
+  apply_env_mappings "env-production" "$WORKER_PROD_ENV_FILE" \
     "JWT_SECRET:BACKEND_JWT_SECRET" \
     "HMAC_GLOBAL_FALLBACK_SECRET:BACKEND_HMAC_GLOBAL_FALLBACK_SECRET" \
     "MQTT_WS_URL:BACKEND_MQTT_WS_URL" \
@@ -75,4 +74,4 @@ if load_root_env "env-local"; then
     "SEED_SAMPLE_DEVICE_ID:BACKEND_SEED_SAMPLE_DEVICE_ID"
 fi
 
-echo "[env-local] Done."
+echo "[env-production] Done."

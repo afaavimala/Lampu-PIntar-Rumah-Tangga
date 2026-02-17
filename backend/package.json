@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local --port 8787",
+    "dev": "NODE_ENV=development node --env-file=.env.local --import tsx src/server.ts",
+    "start": "NODE_ENV=production node --env-file=.env.production --import tsx src/server.ts",
+    "migrate": "node --env-file=.env.local ./scripts/migrate-mariadb.mjs",
+    "migrate:production": "node --env-file=.env.production ./scripts/migrate-mariadb.mjs",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "typecheck": "tsc --noEmit",
@@ -11,14 +14,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.6",
     "bcryptjs": "^3.0.3",
     "cron-parser": "^5.4.0",
     "hono": "^4.11.9",
+    "mariadb": "^3.4.5",
     "zod": "^4.1.11"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.12.12",
-    "@cloudflare/workers-types": "^4.20260214.0",
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
     "wrangler": "^4.65.0"

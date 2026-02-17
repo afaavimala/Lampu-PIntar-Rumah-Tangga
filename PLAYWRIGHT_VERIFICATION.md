@@ -24,18 +24,19 @@ Target lokal:
 
 ## Pending (Belum Dieksekusi di Sesi Ini)
 
-1. Verifikasi cloud URL production (Pages + Worker).
-2. Verifikasi realtime status/lwt end-to-end dengan broker HiveMQ credential valid.
-3. Verifikasi token expired, API-key scope negative test, dan idempotency replay behavior via E2E script.
+1. Verifikasi mode production lokal single port (backend + static frontend).
+2. Verifikasi cloud production URL (Cloudflare Worker + Pages).
+3. Verifikasi realtime status/lwt end-to-end dengan broker HiveMQ credential valid.
+4. Verifikasi token expired, API-key scope negative test, dan idempotency replay behavior via E2E script.
 
 ## Tambahan Verifikasi API (Local, Non-Playwright)
 
-1. Idempotency replay `POST /api/v1/commands/sign` dengan key sama + body sama: `PASS`.
+1. Idempotency replay `POST /api/v1/commands/execute` dengan key sama + body sama: `PASS`.
 2. Idempotency hash mismatch (key sama + body beda): `PASS` (409 `IDEMPOTENCY_CONFLICT`).
 3. API key `demo-integration-key` untuk `GET /api/v1/devices`: `PASS`.
-4. API key read-only (`scope=read`) untuk `POST /api/v1/commands/sign`: `PASS` (403 `FORBIDDEN_DEVICE_ACCESS`).
+4. API key read-only (`scope=read`) untuk `POST /api/v1/commands/execute`: `PASS` (403 `FORBIDDEN_DEVICE_ACCESS`).
 5. Rate limit `POST /api/v1/auth/login` (9x invalid, limit 8): `PASS` (429 `RATE_LIMITED`).
-6. Rate limit `POST /api/v1/commands/sign` (31+ requests, limit 30): `PASS` (429 `RATE_LIMITED`).
+6. Rate limit `POST /api/v1/commands/execute` (31+ requests, limit 30): `PASS` (429 `RATE_LIMITED`).
 7. Refresh token rotation `POST /api/v1/auth/refresh`:
    - refresh pertama sukses,
    - reuse token lama ditolak (401 `AUTH_INVALID_TOKEN`),

@@ -2,12 +2,28 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PAGES_PROJECT="${CF_PAGES_PROJECT:-smartlamp-dashboard}"
-API_BASE_URL="${VITE_API_BASE_URL:-}"
-MQTT_WS_URL="${VITE_MQTT_WS_URL:-}"
-MQTT_USERNAME="${VITE_MQTT_USERNAME:-}"
-MQTT_PASSWORD="${VITE_MQTT_PASSWORD:-}"
-MQTT_CLIENT_ID_PREFIX="${VITE_MQTT_CLIENT_ID_PREFIX:-}"
+source "$ROOT_DIR/scripts/lib/root-env.sh"
+
+resolve_optional_env_value() {
+  local value
+  if value="$(resolve_env_value_with_fallbacks "$@")"; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf ''
+}
+
+load_root_env "deploy-pages" || true
+
+PAGES_PROJECT="$(resolve_optional_env_value "CF_PAGES_PROJECT")"
+if [[ -z "$PAGES_PROJECT" ]]; then
+  PAGES_PROJECT="smartlamp-dashboard"
+fi
+
+PAGES_BRANCH="$(resolve_optional_env_value "CF_PAGES_BRANCH")"
+
+API_BASE_URL="$(resolve_optional_env_value "FRONTEND_VITE_API_BASE_URL" "VITE_API_BASE_URL")"
+PAGES_ARGS=(--project-name "$PAGES_PROJECT")
 
 if [[ -n "$API_BASE_URL" ]]; then
   echo "[deploy-pages] Using VITE_API_BASE_URL=$API_BASE_URL"
@@ -15,21 +31,21 @@ else
   echo "[deploy-pages] WARNING: VITE_API_BASE_URL is not set. Build may use local/default API URL."
 fi
 
+if [[ -n "$PAGES_BRANCH" ]]; then
+  PAGES_ARGS+=(--branch "$PAGES_BRANCH")
+  echo "[deploy-pages] Using Pages branch: $PAGES_BRANCH"
+fi
+
 echo "[deploy-pages] Building dashboard..."
 (
   cd "$ROOT_DIR/dashboard"
-  VITE_API_BASE_URL="$API_BASE_URL" \
-  VITE_MQTT_WS_URL="$MQTT_WS_URL" \
-  VITE_MQTT_USERNAME="$MQTT_USERNAME" \
-  VITE_MQTT_PASSWORD="$MQTT_PASSWORD" \
-  VITE_MQTT_CLIENT_ID_PREFIX="$MQTT_CLIENT_ID_PREFIX" \
-  npm run build
+  VITE_API_BASE_URL="$API_BASE_URL" npm run build
 )
 
 echo "[deploy-pages] Deploying dashboard to Cloudflare Pages project: $PAGES_PROJECT"
 (
   cd "$ROOT_DIR/backend"
-  npx wrangler pages deploy "$ROOT_DIR/dashboard/dist" --project-name "$PAGES_PROJECT"
+  npx wrangler pages deploy "$ROOT_DIR/dashboard/dist" "${PAGES_ARGS[@]}"
 )
 
 echo "[deploy-pages] Done."

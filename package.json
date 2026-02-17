@@ -4,17 +4,23 @@
   "scripts": {
     "install:all": "bash ./scripts/install-all.sh",
     "env:local": "bash ./scripts/env-local.sh",
+    "env:production": "bash ./scripts/env-production.sh",
     "migrate:local": "bash ./scripts/migrate-local.sh",
     "migrate:remote": "bash ./scripts/migrate-remote.sh",
+    "migrate:production": "bash ./scripts/migrate-production.sh",
     "setup:local": "bash ./scripts/setup-local.sh",
+    "setup:production": "bash ./scripts/setup-production.sh",
     "dev": "bash ./scripts/dev.sh",
     "dev:backend": "npm --prefix backend run dev",
     "dev:dashboard": "npm --prefix dashboard run dev -- --host 127.0.0.1 --port 5173",
     "typecheck": "npm --prefix backend run typecheck",
     "test": "npm --prefix backend run test",
     "build": "bash ./scripts/build-all.sh",
+    "start:production": "bash ./scripts/start-production.sh",
     "deploy:worker": "bash ./scripts/deploy-worker.sh",
     "deploy:pages": "bash ./scripts/deploy-pages.sh",
-    "deploy": "bash ./scripts/deploy-all.sh"
+    "deploy:cloud": "bash ./scripts/deploy-all.sh",
+    "deploy:local": "bash ./scripts/deploy-local.sh",
+    "deploy": "bash ./scripts/deploy-local.sh"
   }
 }

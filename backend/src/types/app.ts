@@ -1,5 +1,7 @@
+import type { AppDatabase } from './db'
+
 export type EnvBindings = {
-  DB: D1Database
+  DB: AppDatabase
   JWT_SECRET: string
   HMAC_GLOBAL_FALLBACK_SECRET?: string
   MQTT_WS_URL: string

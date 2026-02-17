@@ -23,16 +23,9 @@ export type Device = {
 
 export type BootstrapResponse = {
   devices: Device[]
-  mqtt: {
-    wsUrl: string
-    username: string
-    password: string
-    clientIdPrefix: string
-    topics: {
-      command: string
-      status: string
-      lwt: string
-    }
+  realtime?: {
+    mode: 'proxy_sse'
+    streamPath: string
   }
 }
 

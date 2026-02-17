@@ -74,15 +74,22 @@ export async function consumeRateLimit(
     .first<RateLimitRow>()
 
   if (!existing || existing.reset_at <= now) {
-    await db
-      .prepare(
-        `INSERT INTO rate_limit_hits (rate_key, request_count, reset_at, created_at, updated_at)
+    const upsertSql = db.dialect === 'mariadb'
+      ? `INSERT INTO rate_limit_hits (rate_key, request_count, reset_at, created_at, updated_at)
+         VALUES (?, 1, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           request_count = VALUES(request_count),
+           reset_at = VALUES(reset_at),
+           updated_at = VALUES(updated_at)`
+      : `INSERT INTO rate_limit_hits (rate_key, request_count, reset_at, created_at, updated_at)
          VALUES (?, 1, ?, ?, ?)
          ON CONFLICT(rate_key) DO UPDATE SET
            request_count = 1,
            reset_at = excluded.reset_at,
-           updated_at = excluded.updated_at`,
-      )
+           updated_at = excluded.updated_at`
+
+    await db
+      .prepare(upsertSql)
       .bind(rateKey, resetAt, nowIso, nowIso)
       .run()
 
