@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/root-env.sh"
 
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  echo "[dev] Syncing local env files from root .env ..."
+  bash "$ROOT_DIR/scripts/env-local.sh"
+fi
+
 resolve_optional_env_value() {
   local value
   if value="$(resolve_env_value_with_fallbacks "$@")"; then
