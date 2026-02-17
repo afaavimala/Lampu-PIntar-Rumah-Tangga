@@ -1,73 +1,61 @@
-# React + TypeScript + Vite
+# SmartLamp Dashboard (Vite + React + TypeScript)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend dashboard untuk kontrol device, monitoring status realtime, dan manajemen jadwal.
 
-Currently, two official plugins are available:
+## Runtime Realtime
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Dashboard tidak konek broker MQTT langsung.
+- Realtime menggunakan SSE dari backend:
+  - `GET /api/v1/realtime/stream`
+- Eksekusi command melalui backend:
+  - `POST /api/v1/commands/execute`
 
-## React Compiler
+## Environment
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+File env yang digunakan:
+- `dashboard/.env.local`
+- `dashboard/.env.production`
 
-## Expanding the ESLint configuration
+Key utama:
+- `VITE_API_BASE_URL`
+  - kosong (``) untuk same-origin (mode single port / Cloudflare single Worker)
+  - isi URL backend jika frontend dipisah origin
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Development
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Dari root:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Atau khusus dashboard:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd dashboard
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
+
+## Build
+
+```bash
+cd dashboard
+npm run build
+```
+
+Output build:
+- `dashboard/dist`
+
+Folder ini dipakai oleh:
+- Node production lokal (`SERVE_DASHBOARD=true`)
+- Cloudflare Worker assets binding (`backend/wrangler.toml`)
+
+## Catatan Deploy Cloudflare
+
+Deploy default saat ini adalah single Worker (API + dashboard assets pada 1 URL):
+
+```bash
+npm run deploy:worker
+```
+
+Flow ini otomatis build dashboard sebelum upload Worker.

@@ -1,7 +1,12 @@
 import type { AppDatabase } from './db'
 
+type WorkerAssetsBinding = {
+  fetch: (request: Request) => Promise<Response>
+}
+
 export type EnvBindings = {
   DB: AppDatabase
+  ASSETS?: WorkerAssetsBinding
   JWT_SECRET: string
   HMAC_GLOBAL_FALLBACK_SECRET?: string
   MQTT_WS_URL: string

@@ -1,8 +1,8 @@
 # Lampu Pintar Rumah Tangga
 
-MVP SmartLamp IoT berbasis `ESP32 + HiveMQ + Hono + Vite` dengan dual deployment:
+MVP SmartLamp IoT berbasis `ESP32 + HiveMQ + Hono + Vite` dengan deployment fleksibel:
 - Lokal: Node.js + MariaDB.
-- Cloudflare: Worker + D1.
+- Cloudflare: single Worker + D1 (API + frontend assets pada 1 URL).
 
 Stack saat ini:
 - Backend: `Hono` (Node runtime untuk lokal, Worker runtime untuk Cloudflare).
@@ -32,8 +32,7 @@ Mode production lokal (single port):
 - Backend Node melayani API + file frontend di port yang sama (`PORT`, default `8080`).
 
 Mode cloudflare:
-- Backend deploy ke Worker (`backend/src/index.ts`).
-- Frontend deploy ke Pages.
+- Backend + frontend deploy ke Worker yang sama (`backend/src/index.ts` + assets dari `dashboard/dist`).
 
 ## Struktur Repo
 
@@ -83,10 +82,11 @@ npm run start:production
 npm run deploy:local
 npm run deploy
 
-# deploy cloudflare (worker + pages)
+# deploy cloudflare (single worker)
 npm run deploy:worker
-npm run deploy:pages
 npm run deploy:cloud
+# legacy (opsional jika tetap mau Pages terpisah)
+npm run deploy:pages
 ```
 
 ## Setup Development Lokal
@@ -193,11 +193,12 @@ npm run env:production
 Key utama di `.env`:
 - Worker/D1: `CF_D1_DATABASE_NAME`, `CF_WORKER_ENV`
 - Worker vars/secrets: `BACKEND_*` (sinkron ke Worker saat deploy)
-- Pages build vars: `FRONTEND_*`
-- Pages deploy target: `CF_PAGES_PROJECT`, `CF_PAGES_BRANCH`
+- Frontend build vars: `FRONTEND_*` (default kosong untuk same-origin)
+- Legacy Pages target (opsional): `CF_PAGES_PROJECT`, `CF_PAGES_BRANCH`
 
 2. Pastikan `backend/wrangler.toml` sudah benar:
 - binding D1 (`[[d1_databases]]`)
+- assets binding (`[assets]`) mengarah ke `../dashboard/dist`
 - cron trigger (`[triggers]`)
 
 3. Jalankan migrasi D1 remote:
@@ -212,12 +213,16 @@ npm run migrate:remote
 npm run deploy:worker
 ```
 
+Deploy ini akan:
+- Build frontend (`dashboard/dist`) dengan `VITE_API_BASE_URL` dari `FRONTEND_VITE_API_BASE_URL`.
+- Upload frontend assets + backend API ke Worker yang sama (single URL).
+
 Catatan:
 - `CF_WORKER_SYNC_SECRETS=true` akan sinkron secret via `wrangler secret put`.
 - `CF_WORKER_KEEP_VARS=true` mencegah var existing di dashboard terhapus.
 - `CF_WORKER_DRY_RUN=true` untuk verifikasi command deploy tanpa publish.
 
-5. Deploy Pages:
+5. (Opsional legacy) Deploy Pages terpisah:
 
 ```bash
 npm run deploy:pages
@@ -297,3 +302,8 @@ Frontend:
 cd dashboard
 npm run build
 ```
+
+## Catatan Operasional
+
+- Endpoint `POST /api/v1/commands/execute` bergantung pada kredensial MQTT backend yang valid.
+- Jika broker menolak autentikasi (mis. `MQTT CONNACK code 5`), API akan merespons `502`.

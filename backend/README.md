@@ -29,6 +29,8 @@ npm run start
 Jika `SERVE_DASHBOARD=true`, backend akan melayani build frontend dari folder `../dashboard/dist` di port yang sama.
 Backend juga menjalankan proxy realtime MQTT -> SSE (`/api/v1/realtime/stream`) agar frontend tidak membutuhkan kredensial broker.
 Pada runtime Worker (Cloudflare), endpoint SSE memakai fallback polling status DB.
+Pada deploy Worker, frontend (`dashboard/dist`) ikut di-serve sebagai static assets pada URL Worker yang sama.
+Jika kredensial MQTT backend tidak valid, endpoint command execute akan gagal publish dan merespons `502`.
 
 ## Deploy Cloudflare Worker (Tetap Didukung)
 
@@ -36,6 +38,10 @@ Pada runtime Worker (Cloudflare), endpoint SSE memakai fallback polling status D
 cd ..
 npm run deploy:worker
 ```
+
+Catatan:
+- `deploy:worker` akan build dashboard terlebih dulu, lalu deploy API + static assets ke Worker yang sama.
+- URL Worker menjadi satu endpoint untuk UI (`/`) dan API (`/api/*`).
 
 Migrasi D1 remote dari root:
 

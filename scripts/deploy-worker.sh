@@ -13,12 +13,22 @@ is_truthy() {
   [[ "$normalized" == "1" || "$normalized" == "true" || "$normalized" == "yes" || "$normalized" == "on" ]]
 }
 
+resolve_optional_env_value() {
+  local value
+  if value="$(resolve_env_value_with_fallbacks "$@")"; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf ''
+}
+
 load_root_env "deploy-worker" || true
 
 WORKER_ENV="${CF_WORKER_ENV:-}"
 SYNC_SECRETS="${CF_WORKER_SYNC_SECRETS:-true}"
 KEEP_VARS="${CF_WORKER_KEEP_VARS:-true}"
 DRY_RUN="${CF_WORKER_DRY_RUN:-false}"
+API_BASE_URL="$(resolve_optional_env_value "FRONTEND_VITE_API_BASE_URL" "VITE_API_BASE_URL")"
 
 if [[ -n "$WORKER_ENV" ]]; then
   DEPLOY_ARGS+=(--env "$WORKER_ENV")
@@ -33,6 +43,17 @@ if is_truthy "$DRY_RUN"; then
   DEPLOY_ARGS+=(--dry-run)
   echo "[deploy-worker] Dry run mode enabled."
 fi
+
+if [[ -n "$API_BASE_URL" ]]; then
+  echo "[deploy-worker] Building dashboard with VITE_API_BASE_URL=$API_BASE_URL"
+else
+  echo "[deploy-worker] Building dashboard with same-origin API base (empty VITE_API_BASE_URL)"
+fi
+
+(
+  cd "$ROOT_DIR/dashboard"
+  VITE_API_BASE_URL="$API_BASE_URL" npm run build
+)
 
 append_worker_var_arg() {
   local key="$1"

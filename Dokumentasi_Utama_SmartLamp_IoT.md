@@ -2,7 +2,7 @@
 
 ## ESP32 + HiveMQ + Node.js + Hono + Vite + MariaDB (Hybrid, Multi-Device)
 
-Tanggal Dokumen: 16 February 2026
+Tanggal Dokumen: 17 February 2026
 
 ---
 
@@ -429,7 +429,7 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 
 - Local development (2 port: backend + frontend Vite).
 - Local production (single port: backend + static frontend).
-- Cloudflare production (Worker + Pages + D1).
+- Cloudflare production (single Worker + D1, frontend assets dan API pada URL yang sama).
 
 ## 10.1 Local Development
 
@@ -453,12 +453,12 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 ## 10.3 Cloudflare Deployment
 
 1. Gunakan konfigurasi Worker pada `backend/wrangler.toml`.
-2. Pastikan binding D1 dan cron trigger sudah sesuai.
+2. Pastikan binding D1, cron trigger, dan assets binding sudah sesuai.
 3. Set vars/secrets Worker dari root `.env` (dibantu `scripts/deploy-worker.sh`).
 4. Jalankan migrasi D1 remote: `npm run migrate:remote`.
 5. Deploy Worker: `npm run deploy:worker`.
-6. Deploy Pages: `npm run deploy:pages` (set `FRONTEND_VITE_API_BASE_URL` ke URL Worker production).
-7. Verifikasi end-to-end pada URL production.
+6. Verifikasi end-to-end pada URL Worker production (single URL).
+7. (Opsional legacy) Jika masih butuh Pages terpisah, gunakan `npm run deploy:pages`.
 
 ## 10.4 Metode Verifikasi Wajib
 
@@ -569,7 +569,7 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 
 - [x] Semua test UI/E2E dijalankan via Playwright MCP (bukan verifikasi manual saja).
 - [x] Test local mode: dashboard Vite + API Hono (Node.js) berjalan end-to-end.
-- [ ] Test production-local mode (single port) dan verifikasi end-to-end.
+- [x] Test production-local mode (single port) untuk alur login/dashboard/schedule/stream (command execute masih tergantung kredensial MQTT valid).
 - [x] Verifikasi kontrak Open Integration API v1 (status code, envelope JSON, error code).
 - [x] Verifikasi endpoint `GET /api/v1/openapi.json` dapat diakses dan valid.
 - [x] Verifikasi API key scope membatasi akses endpoint sesuai role.
@@ -591,11 +591,12 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 - [x] Simpan evidence Playwright MCP (screenshot dan catatan pass/fail per skenario).
 
 Catatan verifikasi terakhir:
-- Tanggal: 16 February 2026 (local).
+- Tanggal: 17 February 2026 (local + cloud).
 - Tool: Playwright MCP.
 - Evidence screenshot local: tersimpan pada output sesi Playwright MCP runner (artefak sesi, tidak disimpan permanen di root repo).
 - Verifikasi tambahan API local: API key scope, idempotency replay/mismatch, rate-limit auth/command, dan refresh token rotation (lihat `PLAYWRIGHT_VERIFICATION.md`).
-- Cloud verification belum dijalankan karena URL production belum disediakan pada sesi ini.
+- Cloud verification sudah dijalankan pada URL Worker single deploy (`/` dan `/api/*` di origin yang sama).
+- Catatan blocker saat ini: publish command ke broker gagal auth (`MQTT CONNACK code 5`) jika kredensial MQTT tidak valid.
 
 ---
 
@@ -608,8 +609,8 @@ Catatan verifikasi terakhir:
 - [x] Manajemen jadwal otomatis berfungsi (create/edit/delete/pause/resume).
 - [x] Scheduler interval backend mengeksekusi command terjadwal sesuai timezone.
 - [x] API berjalan di Hono Node.js dan frontend dibangun via Vite.
-- [ ] Deployment lokal (dev + production single port) lulus smoke test.
-- [ ] Deployment cloudflare (Worker + Pages) lulus smoke test.
+- [x] Deployment lokal (dev + production single port) lulus smoke test (dengan catatan MQTT credential valid dibutuhkan untuk publish command).
+- [x] Deployment cloudflare (single Worker + D1) lulus smoke test.
 - [ ] Verifikasi E2E local + cloud lulus melalui Playwright MCP.
 - [x] Open Integration API v1 terdokumentasi dan lulus contract verification.
 - [x] Audit command tersimpan di MariaDB.

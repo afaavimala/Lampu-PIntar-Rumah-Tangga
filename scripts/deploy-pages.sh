@@ -15,6 +15,8 @@ resolve_optional_env_value() {
 
 load_root_env "deploy-pages" || true
 
+echo "[deploy-pages] Legacy flow: deploy frontend ke Cloudflare Pages terpisah."
+
 PAGES_PROJECT="$(resolve_optional_env_value "CF_PAGES_PROJECT")"
 if [[ -z "$PAGES_PROJECT" ]]; then
   PAGES_PROJECT="smartlamp-dashboard"

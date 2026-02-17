@@ -3,6 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2026-02-16"
 compatibility_flags = ["nodejs_compat"]
 
+[assets]
+directory = "../dashboard/dist"
+binding = "ASSETS"
+
 # Aman dicommit: hanya non-secret defaults.
 # Jangan taruh credential/token/password di file ini.
 # Secret harus diset via `wrangler secret put` (dibantu script deploy-worker.sh).
