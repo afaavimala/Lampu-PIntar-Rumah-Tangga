@@ -71,8 +71,12 @@ npm run setup:production
 
 # development mode (backend :BACKEND_PORT default 8787 + dashboard :5173)
 npm run dev
+npm run dev:backend
+npm run dev:dashboard
 
 # validasi/build
+npm run typecheck
+npm run test
 npm run build
 
 # production single port
@@ -80,154 +84,134 @@ npm run start:production
 
 # flow deploy lokal (migrate + build + start)
 npm run deploy:local
-npm run deploy
 
 # deploy cloudflare (single worker)
+npm run migrate:remote
 npm run deploy:worker
-npm run deploy:cloud
-# legacy (opsional jika tetap mau Pages terpisah)
-npm run deploy:pages
 ```
 
 ## Setup Development Lokal
 
-1. Install dependency:
-
-```bash
-npm run install:all
-```
-
-2. Siapkan root env (single source of truth):
+### Opsi cepat
 
 ```bash
 cp .env.example .env
+# edit .env sesuai environment lokal
+npm run setup:local
+npm run dev
 ```
 
-3. Edit `.env`:
-- Gunakan parameter shared: `BACKEND_*` dan `FRONTEND_*`
-- MariaDB credential wajib: `BACKEND_DB_HOST`, `BACKEND_DB_PORT`, `BACKEND_DB_USER`, `BACKEND_DB_PASSWORD`, `BACKEND_DB_NAME`
-- Secret wajib: `BACKEND_JWT_SECRET`, `BACKEND_HMAC_GLOBAL_FALLBACK_SECRET`
-- MQTT wajib: `BACKEND_MQTT_WS_URL`, `BACKEND_MQTT_USERNAME`, `BACKEND_MQTT_PASSWORD`
+### Opsi manual
 
-4. Generate file env lokal dari root `.env`:
-
+1. Install dependency.
+```bash
+npm run install:all
+```
+2. Buat root env.
+```bash
+cp .env.example .env
+```
+3. Isi `.env` minimal:
+- `BACKEND_DB_HOST`, `BACKEND_DB_PORT`, `BACKEND_DB_USER`, `BACKEND_DB_PASSWORD`, `BACKEND_DB_NAME`
+- `BACKEND_JWT_SECRET`, `BACKEND_HMAC_GLOBAL_FALLBACK_SECRET`
+- `BACKEND_MQTT_WS_URL`, `BACKEND_MQTT_USERNAME`, `BACKEND_MQTT_PASSWORD`
+4. Generate env lokal turunan.
 ```bash
 npm run env:local
 ```
-
-5. Migrasi database:
-
+5. Jalankan migrasi MariaDB lokal.
 ```bash
 npm run migrate:local
 ```
-
-6. Jalankan backend + dashboard:
-
+6. Jalankan aplikasi.
 ```bash
 npm run dev
 ```
 
-Default dev URL:
-- Frontend: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:<BACKEND_PORT>` (default `8787`)
+URL default development:
+- Dashboard: `http://127.0.0.1:5173`
+- Backend API: `http://127.0.0.1:8787`
+
+Catatan:
+- `npm run dev` otomatis sinkronkan `.env` -> `backend/.env.local` dan `dashboard/.env.local` sebelum start.
+- Untuk run terpisah: `npm run dev:backend` dan `npm run dev:dashboard`.
 
 ## Deploy Production Lokal (Single Port)
 
-1. Install dependency + siapkan root env:
+### Opsi cepat (sekali jalan)
 
+```bash
+cp .env.example .env
+# edit .env untuk mode production lokal
+npm run deploy:local
+```
+
+`deploy:local` akan menjalankan: `env:production` -> `migrate:production` -> `build` -> `start:production`.
+
+### Opsi manual
+
+1. Siapkan dependency + root env.
 ```bash
 npm run install:all
 cp .env.example .env
 ```
-
-2. Edit `.env` untuk production lokal:
-- `BACKEND_PORT` (misal `8080`)
+2. Set nilai penting di `.env`:
 - `BACKEND_SERVE_DASHBOARD=true`
-- `BACKEND_DB_*` untuk MariaDB production
-- `BACKEND_SEED_ADMIN_PASSWORD` (ganti dari default)
-- `FRONTEND_VITE_API_BASE_URL=` (kosong untuk mode 1 port)
-
-3. Generate env production dari root `.env`:
-
+- `BACKEND_PORT` (misal `8080`)
+- seluruh `BACKEND_DB_*` untuk DB production
+- `BACKEND_SEED_ADMIN_PASSWORD` wajib diganti
+- `FRONTEND_VITE_API_BASE_URL=` tetap kosong untuk mode same-origin single port
+3. Generate env production.
 ```bash
 npm run env:production
 ```
-
-4. Migrasi database production:
-
+4. Migrasi DB production.
 ```bash
 npm run migrate:production
 ```
-
-5. Build frontend + validasi:
-
+5. Build + jalankan.
 ```bash
 npm run build
-```
-
-6. Jalankan production:
-
-```bash
 npm run start:production
 ```
 
-Catatan shared-only:
-- Nilai `BACKEND_*` dan `FRONTEND_*` dipakai untuk local dev, local production, dan cloud.
-- Jika ingin nilai berbeda antar mode, edit `.env` lalu jalankan ulang `npm run env:local` atau `npm run env:production`.
+Verifikasi:
+- App: `http://127.0.0.1:<BACKEND_PORT>`
+- Health: `GET /api/health`
 
-App dapat diakses di:
-- `http://127.0.0.1:<BACKEND_PORT>` (default `8787`, atau `8080` jika Anda set manual)
+## Deploy Cloudflare Worker (Single URL)
 
-API health check:
-- `GET /api/health`
-
-## Deploy Cloudflare (Tetap Didukung)
-
-1. Siapkan root env:
-
+1. Pastikan sudah login Wrangler (`npx wrangler login`) dan binding D1/Assets/Cron di `backend/wrangler.toml` valid.
+2. Siapkan root env.
 ```bash
 cp .env.example .env
+# edit .env untuk cloud
+```
+3. Pastikan nilai cloud penting:
+- `CF_D1_DATABASE_NAME` (dan `CF_WORKER_ENV` jika pakai environment wrangler)
+- `CF_WORKER_SYNC_SECRETS=true` jika ingin sinkron secret otomatis
+- `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin
+4. Generate env production turunan.
+```bash
 npm run env:production
 ```
-
-Key utama di `.env`:
-- Worker/D1: `CF_D1_DATABASE_NAME`, `CF_WORKER_ENV`
-- Worker vars/secrets: `BACKEND_*` (sinkron ke Worker saat deploy)
-- Frontend build vars: `FRONTEND_*` (default kosong untuk same-origin)
-- Legacy Pages target (opsional): `CF_PAGES_PROJECT`, `CF_PAGES_BRANCH`
-
-2. Pastikan `backend/wrangler.toml` sudah benar:
-- binding D1 (`[[d1_databases]]`)
-- assets binding (`[assets]`) mengarah ke `../dashboard/dist`
-- cron trigger (`[triggers]`)
-- default `[vars]` sinkron dengan `.env.example` (override cloud production lewat root `.env` + `deploy:worker`)
-
-3. Jalankan migrasi D1 remote:
-
+5. Jalankan migrasi D1 remote.
 ```bash
 npm run migrate:remote
 ```
-
-4. Deploy Worker:
-
+6. Deploy Worker.
 ```bash
 npm run deploy:worker
 ```
 
-Deploy ini akan:
-- Build frontend (`dashboard/dist`) dengan `VITE_API_BASE_URL` dari `FRONTEND_VITE_API_BASE_URL`.
-- Upload frontend assets + backend API ke Worker yang sama (single URL).
-
-Catatan:
-- `CF_WORKER_SYNC_SECRETS=true` akan sinkron secret via `wrangler secret put`.
-- `CF_WORKER_KEEP_VARS=true` mencegah var existing di dashboard terhapus.
-- `CF_WORKER_DRY_RUN=true` untuk verifikasi command deploy tanpa publish.
-
-5. (Opsional legacy) Deploy Pages terpisah:
-
+Catatan deploy cloud:
+- Script deploy otomatis build frontend (`dashboard/dist`) lalu upload assets + API ke Worker yang sama.
+- Script deploy otomatis sync vars/secrets dari root `.env` saat `CF_WORKER_SYNC_SECRETS=true`.
+- Override sekali jalan jika perlu:
 ```bash
-npm run deploy:pages
+FRONTEND_VITE_API_BASE_URL= npm run deploy:worker
 ```
+- Gunakan `CF_WORKER_DRY_RUN=true` untuk validasi perintah deploy tanpa publish.
 
 ## Environment Files
 

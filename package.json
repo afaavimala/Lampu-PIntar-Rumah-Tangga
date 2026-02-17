@@ -18,9 +18,6 @@
     "build": "bash ./scripts/build-all.sh",
     "start:production": "bash ./scripts/start-production.sh",
     "deploy:worker": "bash ./scripts/deploy-worker.sh",
-    "deploy:pages": "bash ./scripts/deploy-pages.sh",
-    "deploy:cloud": "bash ./scripts/deploy-all.sh",
-    "deploy:local": "bash ./scripts/deploy-local.sh",
-    "deploy": "bash ./scripts/deploy-local.sh"
+    "deploy:local": "bash ./scripts/deploy-local.sh"
   }
 }

@@ -458,7 +458,6 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 4. Jalankan migrasi D1 remote: `npm run migrate:remote`.
 5. Deploy Worker: `npm run deploy:worker`.
 6. Verifikasi end-to-end pada URL Worker production (single URL).
-7. (Opsional legacy) Jika masih butuh Pages terpisah, gunakan `npm run deploy:pages`.
 
 ## 10.4 Metode Verifikasi Wajib
 
