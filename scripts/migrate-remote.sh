@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/root-env.sh"
+source "$ROOT_DIR/scripts/lib/wrangler-config.sh"
 
 resolve_optional_env_value() {
   local value
@@ -22,6 +23,23 @@ fi
 
 WORKER_ENV="$(resolve_optional_env_value "CF_WORKER_ENV")"
 MIGRATE_ARGS=("$D1_DATABASE_NAME" --remote)
+WRANGLER_CONFIG="$ROOT_DIR/backend/wrangler.toml"
+WRANGLER_CONFIG_RUNTIME=""
+
+if [[ ! -f "$WRANGLER_CONFIG" ]]; then
+  echo "[migrate-remote] Missing backend/wrangler.toml."
+  echo "[migrate-remote] Create it from template:"
+  echo "  cp backend/wrangler.toml.example backend/wrangler.toml"
+  exit 1
+fi
+
+WRANGLER_CONFIG_RUNTIME="$(create_wrangler_runtime_config "$WRANGLER_CONFIG" "migrate-remote")"
+
+cleanup() {
+  cleanup_wrangler_runtime_config "$WRANGLER_CONFIG_RUNTIME" "$WRANGLER_CONFIG"
+}
+
+trap cleanup EXIT
 
 if [[ -n "$WORKER_ENV" ]]; then
   MIGRATE_ARGS+=(--env "$WORKER_ENV")
@@ -31,7 +49,7 @@ fi
 echo "[migrate-remote] Applying remote D1 migrations..."
 (
   cd "$ROOT_DIR/backend"
-  npx wrangler d1 migrations apply "${MIGRATE_ARGS[@]}"
+  npx wrangler -c "$WRANGLER_CONFIG_RUNTIME" d1 migrations apply "${MIGRATE_ARGS[@]}"
 )
 
 echo "[migrate-remote] Done."

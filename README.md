@@ -181,7 +181,13 @@ Verifikasi:
 
 ## Deploy Cloudflare Worker (Single URL)
 
-1. Pastikan sudah login Wrangler (`npx wrangler login`) dan binding D1/Assets/Cron di `backend/wrangler.toml` valid.
+1. Pastikan sudah login Wrangler (`npx wrangler login`) dan `backend/wrangler.toml` tersedia.
+- `backend/wrangler.toml.example` hanya template contoh, tidak dipakai langsung untuk deploy.
+- Jika belum ada, buat dari template:
+```bash
+cp backend/wrangler.toml.example backend/wrangler.toml
+```
+- Pastikan binding D1/Assets/Cron valid.
 2. Siapkan root env.
 ```bash
 cp .env.example .env
@@ -191,6 +197,11 @@ cp .env.example .env
 - `CF_D1_DATABASE_NAME` (dan `CF_WORKER_ENV` jika pakai environment wrangler)
 - `CF_WORKER_SYNC_SECRETS=true` jika ingin sinkron secret otomatis
 - `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin
+- Opsional override parameter struktur `backend/wrangler.toml` dari root `.env`:
+  - `CF_WORKER_NAME`, `CF_WORKER_COMPATIBILITY_DATE`
+  - `CF_ASSETS_DIRECTORY`, `CF_ASSETS_BINDING`
+  - `CF_D1_DATABASE_BINDING`, `CF_D1_DATABASE_NAME`, `CF_D1_DATABASE_ID`
+  - `CF_WORKER_CRONS` (format CSV, contoh: `* * * * *,0 7 * * *`)
 4. Generate env production turunan.
 ```bash
 npm run env:production

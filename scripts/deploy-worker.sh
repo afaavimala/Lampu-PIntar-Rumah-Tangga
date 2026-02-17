@@ -3,9 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/root-env.sh"
+source "$ROOT_DIR/scripts/lib/wrangler-config.sh"
 
 DEPLOY_ARGS=()
 SECRET_ARGS=()
+WRANGLER_CONFIG="$ROOT_DIR/backend/wrangler.toml"
+WRANGLER_CONFIG_RUNTIME=""
 
 is_truthy() {
   local raw="${1:-}"
@@ -23,6 +26,21 @@ resolve_optional_env_value() {
 }
 
 load_root_env "deploy-worker" || true
+
+if [[ ! -f "$WRANGLER_CONFIG" ]]; then
+  echo "[deploy-worker] Missing backend/wrangler.toml."
+  echo "[deploy-worker] Create it from template:"
+  echo "  cp backend/wrangler.toml.example backend/wrangler.toml"
+  exit 1
+fi
+
+WRANGLER_CONFIG_RUNTIME="$(create_wrangler_runtime_config "$WRANGLER_CONFIG" "deploy-worker")"
+
+cleanup() {
+  cleanup_wrangler_runtime_config "$WRANGLER_CONFIG_RUNTIME" "$WRANGLER_CONFIG"
+}
+
+trap cleanup EXIT
 
 WORKER_ENV="${CF_WORKER_ENV:-}"
 SYNC_SECRETS="${CF_WORKER_SYNC_SECRETS:-true}"
@@ -80,7 +98,7 @@ sync_worker_secret() {
   echo "[deploy-worker] Sync worker secret $key from $source_var_name"
   (
     cd "$ROOT_DIR/backend"
-    printf '%s' "${!source_var_name}" | npx wrangler secret put "$key" "${SECRET_ARGS[@]}"
+    printf '%s' "${!source_var_name}" | npx wrangler -c "$WRANGLER_CONFIG_RUNTIME" secret put "$key" "${SECRET_ARGS[@]}"
   )
 }
 
@@ -110,7 +128,7 @@ fi
 echo "[deploy-worker] Deploying Cloudflare Worker..."
 (
   cd "$ROOT_DIR/backend"
-  npx wrangler deploy "${DEPLOY_ARGS[@]}"
+  npx wrangler -c "$WRANGLER_CONFIG_RUNTIME" deploy "${DEPLOY_ARGS[@]}"
 )
 
 echo "[deploy-worker] Done."
