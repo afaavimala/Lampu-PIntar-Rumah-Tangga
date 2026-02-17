@@ -29,7 +29,7 @@ ESP32 -- MQTT TLS --> HiveMQ Broker <-- MQTT WSS --> Node.js + Hono API
 
 Mode production lokal (single port):
 - Frontend dibuild ke `dashboard/dist`.
-- Backend Node melayani API + file frontend di port yang sama (`PORT`, default `8080`).
+- Backend Node melayani API + file frontend di port yang sama (`PORT` dari `BACKEND_PORT`, default `8787`).
 
 Mode cloudflare:
 - Backend + frontend deploy ke Worker yang sama (`backend/src/index.ts` + assets dari `dashboard/dist`).
@@ -54,7 +54,7 @@ scripts/    # script setup/build/deploy lokal + cloud
 # install backend + dashboard
 npm run install:all
 
-# siapkan env untuk development / production
+# siapkan env untuk development / production (wajib sudah ada root .env)
 npm run env:local
 npm run env:production
 
@@ -69,7 +69,7 @@ npm run migrate:remote
 npm run setup:local
 npm run setup:production
 
-# development mode (backend :8787 + dashboard :5173)
+# development mode (backend :BACKEND_PORT default 8787 + dashboard :5173)
 npm run dev
 
 # validasi/build
@@ -129,7 +129,7 @@ npm run dev
 
 Default dev URL:
 - Frontend: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:8787`
+- Backend API: `http://127.0.0.1:<BACKEND_PORT>` (default `8787`)
 
 ## Deploy Production Lokal (Single Port)
 
@@ -176,7 +176,7 @@ Catatan shared-only:
 - Jika ingin nilai berbeda antar mode, edit `.env` lalu jalankan ulang `npm run env:local` atau `npm run env:production`.
 
 App dapat diakses di:
-- `http://127.0.0.1:8080` (atau sesuai `PORT`)
+- `http://127.0.0.1:<BACKEND_PORT>` (default `8787`, atau `8080` jika Anda set manual)
 
 API health check:
 - `GET /api/health`
@@ -200,6 +200,7 @@ Key utama di `.env`:
 - binding D1 (`[[d1_databases]]`)
 - assets binding (`[assets]`) mengarah ke `../dashboard/dist`
 - cron trigger (`[triggers]`)
+- default `[vars]` sinkron dengan `.env.example` (override cloud production lewat root `.env` + `deploy:worker`)
 
 3. Jalankan migrasi D1 remote:
 
@@ -231,6 +232,7 @@ npm run deploy:pages
 ## Environment Files
 
 - Root override tunggal (source of truth): `.env` (buat dari `.env.example`)
+- `npm run env:local` dan `npm run env:production` sekarang akan gagal jika root `.env` belum ada.
 - Generated lokal:
   - `backend/.env.local`
   - `dashboard/.env.local`
@@ -285,6 +287,52 @@ Open integration:
 - `GET /api/v1/devices/{deviceId}`
 - `GET /api/v1/devices/{deviceId}/status`
 - `GET /api/v1/openapi.json`
+
+## MQTT Contract (ESP32 Integration)
+
+Topic standar:
+- Command: `home/{deviceId}/cmd`
+- Status: `home/{deviceId}/status`
+- LWT: `home/{deviceId}/lwt`
+
+QoS/retain yang dipakai sistem:
+- `cmd`: QoS 1, retain `false` (publish dari backend)
+- `status`: QoS 1, retain `true` (publish dari device)
+- `lwt`: QoS 1, retain `true` (LWT online/offline dari device)
+
+Payload command (backend -> ESP32):
+
+```json
+{
+  "deviceId": "lampu-ruang-tamu",
+  "action": "ON",
+  "requestId": "req-123",
+  "issuedAt": 1739786400000,
+  "expiresAt": 1739786430000,
+  "nonce": "uuid-v4",
+  "sig": "hex-hmac-sha256"
+}
+```
+
+Signing canonical string (untuk verifikasi `sig` di ESP32):
+
+```text
+deviceId|action|requestId|issuedAt|expiresAt|nonce
+```
+
+Checklist integrasi ESP32:
+- Subscribe `home/{deviceId}/cmd`, parse JSON envelope command.
+- Verifikasi signature HMAC SHA-256 menggunakan secret device/global yang sama dengan backend.
+- Tolak command jika `expiresAt` sudah lewat atau `nonce` pernah dipakai (anti replay).
+- Sinkronkan waktu device (NTP) agar validasi `issuedAt`/`expiresAt` akurat.
+- Publish status ke `home/{deviceId}/status` dan set LWT ke `home/{deviceId}/lwt`.
+
+Source of truth implementasi:
+- `backend/src/routes/commands.ts`
+- `backend/src/lib/scheduler-runner.ts`
+- `backend/src/lib/mqtt-ws.ts`
+- `backend/src/lib/crypto.ts`
+- `backend/src/lib/realtime-mqtt-proxy.ts`
 
 ## Testing
 

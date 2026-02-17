@@ -1,10 +1,10 @@
 # Local development env for `wrangler dev --local`
-JWT_SECRET=dev-local-jwt-secret-change-this
-HMAC_GLOBAL_FALLBACK_SECRET=dev-local-hmac-secret-change-this
+JWT_SECRET=replace-with-strong-secret
+HMAC_GLOBAL_FALLBACK_SECRET=replace-with-hmac-secret
 MQTT_WS_URL=wss://your-cluster.s1.eu.hivemq.cloud:8884/mqtt
 MQTT_USERNAME=replace-with-username
 MQTT_PASSWORD=replace-with-password
-MQTT_CLIENT_ID_PREFIX=smartlamp-worker-local
+MQTT_CLIENT_ID_PREFIX=smartlamp-worker
 JWT_ACCESS_TTL_SEC=900
 JWT_REFRESH_TTL_SEC=2592000
 COOKIE_SECURE=false

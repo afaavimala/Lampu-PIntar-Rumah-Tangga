@@ -52,7 +52,7 @@ npm run migrate:remote
 Konfigurasi cloud:
 - `.env` (shared: `BACKEND_*`, `FRONTEND_*`, plus opsi deploy `CF_*`)
 - `backend/wrangler.toml`
-- `backend/.dev.vars.example`
+- `backend/.dev.vars.local.example`
 - `backend/.worker.production.env.example`
 
 ## Environment File
