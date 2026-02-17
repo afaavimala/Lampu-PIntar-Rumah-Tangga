@@ -2,6 +2,8 @@
 scripts/ai-commit
 scripts/perplexity_commit_message.py
 
+backend/wrangler.toml
+
 # Logs
 logs
 *.log

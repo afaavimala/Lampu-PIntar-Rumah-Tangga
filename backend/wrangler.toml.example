@@ -30,7 +30,7 @@ SEED_SAMPLE_DEVICE_ID = "lampu-ruang-tamu"
 [[d1_databases]]
 binding = "DB"
 database_name = "smartlamp_db"
-database_id = "71be5235-fd72-4fb3-a646-b6a07e92b1d5"
+database_id = "33b4c993-4ebf-471e-aa4d-ca7fb9507ea8"
 
 [triggers]
 crons = ["* * * * *"]
