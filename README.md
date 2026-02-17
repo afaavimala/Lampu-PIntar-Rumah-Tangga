@@ -13,7 +13,7 @@ Stack saat ini:
 
 Catatan runtime realtime:
 - Node lokal: SSE disuplai dari subscriber MQTT backend (event status/lwt broker).
-- Cloudflare Worker: SSE fallback polling status DB (tanpa kredensial MQTT di frontend).
+- Cloudflare Worker: SSE fallback polling status DB + snapshot LWT retained via MQTT over WebSocket (tanpa kredensial MQTT di frontend).
 
 ## Arsitektur Ringkas
 
@@ -40,6 +40,7 @@ Mode cloudflare:
 backend/    # Hono API (Node + Worker), migrasi MariaDB & D1
 dashboard/  # Vite React dashboard + realtime SSE client
 scripts/    # script setup/build/deploy lokal + cloud
+firmware/   # referensi firmware ESP32 SmartLamp (MQTT TLS + HMAC verify + LWT)
 ```
 
 ## Prasyarat
@@ -80,6 +81,7 @@ npm run test
 npm run build
 
 # production single port
+# (otomatis sync root .env -> backend/.env.production)
 npm run start:production
 
 # flow deploy lokal (migrate + build + start)
@@ -88,6 +90,11 @@ npm run deploy:local
 # deploy cloudflare (single worker)
 npm run migrate:remote
 npm run deploy:worker
+
+# verifikasi tambahan (opsional)
+VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/verify-parallel-devices.sh
+VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/measure-status-ack-latency.sh
+./scripts/verify-command-security.sh
 ```
 
 ## Setup Development Lokal
@@ -178,6 +185,9 @@ npm run start:production
 Verifikasi:
 - App: `http://127.0.0.1:<BACKEND_PORT>`
 - Health: `GET /api/health`
+
+Catatan:
+- `npm run start:production` akan selalu menjalankan `env:production` dulu agar konfigurasi turunan tetap sinkron dengan root `.env`.
 
 ## Deploy Cloudflare Worker (Single URL)
 
@@ -275,9 +285,11 @@ Schedules:
 - `PATCH /api/v1/schedules/{scheduleId}`
 - `DELETE /api/v1/schedules/{scheduleId}`
 - `GET /api/v1/schedules/{scheduleId}/runs`
+- Catatan dashboard: input jadwal memakai format waktu `HH:mm`, lalu dikonversi ke cron harian internal (`m h * * *`).
 
 Open integration:
 - `GET /api/v1/integrations/capabilities`
+- `POST /api/v1/devices` (tambah device dan assign ke user login)
 - `GET /api/v1/devices`
 - `GET /api/v1/devices/{deviceId}`
 - `GET /api/v1/devices/{deviceId}/status`

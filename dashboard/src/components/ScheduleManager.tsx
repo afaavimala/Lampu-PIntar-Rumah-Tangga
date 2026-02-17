@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Device, ScheduleRule, ScheduleRun } from '../lib/types'
 
 type ScheduleManagerProps = {
@@ -33,14 +33,90 @@ export function ScheduleManager({
   onDelete,
   onUpdate,
 }: ScheduleManagerProps) {
+  const DAILY_CRON_PATTERN = /^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*\s*$/
+
+  const toPaddedTime = (hour: number, minute: number) =>
+    `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+
+  const cronToDailyTime = (cron: string) => {
+    const match = DAILY_CRON_PATTERN.exec(cron)
+    if (!match) {
+      return null
+    }
+    const minute = Number(match[1])
+    const hour = Number(match[2])
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      return null
+    }
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      return null
+    }
+    return toPaddedTime(hour, minute)
+  }
+
+  const dailyTimeToCron = (time: string) => {
+    const [hourText, minuteText] = time.split(':')
+    const hour = Number(hourText)
+    const minute = Number(minuteText)
+    const safeHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 18
+    const safeMinute = Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : 0
+    return `${safeMinute} ${safeHour} * * *`
+  }
+
+  const fallbackTimeFromNextRun = (schedule: ScheduleRule) => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: schedule.timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date(schedule.nextRunAt))
+      const hour = parts.find((part) => part.type === 'hour')?.value
+      const minute = parts.find((part) => part.type === 'minute')?.value
+      if (hour && minute) {
+        return `${hour}:${minute}`
+      }
+    } catch {
+      // fallback below
+    }
+
+    const date = new Date(schedule.nextRunAt)
+    return toPaddedTime(date.getHours(), date.getMinutes())
+  }
+
+  const describeScheduleTime = (schedule: ScheduleRule) => {
+    const parsed = cronToDailyTime(schedule.cron)
+    if (parsed) {
+      return `Setiap hari ${parsed}`
+    }
+    const fallback = fallbackTimeFromNextRun(schedule)
+    return `Jadwal kustom (ditampilkan sebagai ${fallback})`
+  }
+
   const [deviceId, setDeviceId] = useState(devices[0]?.id ?? '')
   const [action, setAction] = useState<'ON' | 'OFF'>('ON')
-  const [cron, setCron] = useState('0 18 * * *')
+  const [time, setTime] = useState('18:00')
   const [timezone, setTimezone] = useState('Asia/Jakarta')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editAction, setEditAction] = useState<'ON' | 'OFF'>('ON')
-  const [editCron, setEditCron] = useState('0 18 * * *')
+  const [editTime, setEditTime] = useState('18:00')
   const [editTimezone, setEditTimezone] = useState('Asia/Jakarta')
+  const [editingCustomCron, setEditingCustomCron] = useState(false)
+
+  const hasDevices = devices.length > 0
+  const deviceNameById = useMemo(() => new Map(devices.map((item) => [item.id, item.name])), [devices])
+
+  useEffect(() => {
+    if (devices.length === 0) {
+      setDeviceId('')
+      return
+    }
+
+    const stillExists = devices.some((item) => item.id === deviceId)
+    if (!stillExists) {
+      setDeviceId(devices[0].id)
+    }
+  }, [devices, deviceId])
 
   return (
     <section className="schedule-shell">
@@ -50,7 +126,7 @@ export function ScheduleManager({
           onSubmit={async (event) => {
             event.preventDefault()
             if (!deviceId) return
-            await onCreate({ deviceId, action, cron, timezone, enabled: true })
+            await onCreate({ deviceId, action, cron: dailyTimeToCron(time), timezone, enabled: true })
           }}
           className="schedule-form"
         >
@@ -72,14 +148,22 @@ export function ScheduleManager({
             </select>
           </label>
           <label>
-            Cron
-            <input value={cron} onChange={(event) => setCron(event.target.value)} required />
+            Waktu (HH:mm)
+            <input
+              type="time"
+              value={time}
+              onChange={(event) => setTime(event.target.value)}
+              required
+            />
           </label>
           <label>
             Timezone
             <input value={timezone} onChange={(event) => setTimezone(event.target.value)} required />
           </label>
-          <button type="submit">Create Schedule</button>
+          {!hasDevices ? <p className="small">Tambahkan device terlebih dahulu sebelum membuat jadwal.</p> : null}
+          <button type="submit" disabled={!hasDevices}>
+            Create Schedule
+          </button>
         </form>
       </div>
 
@@ -96,7 +180,7 @@ export function ScheduleManager({
                     event.preventDefault()
                     await onUpdate(schedule.id, {
                       action: editAction,
-                      cron: editCron,
+                      cron: dailyTimeToCron(editTime),
                       timezone: editTimezone,
                     })
                     setEditingId(null)
@@ -110,13 +194,24 @@ export function ScheduleManager({
                     </select>
                   </label>
                   <label>
-                    Cron
-                    <input value={editCron} onChange={(event) => setEditCron(event.target.value)} required />
+                    Waktu (HH:mm)
+                    <input
+                      type="time"
+                      value={editTime}
+                      onChange={(event) => setEditTime(event.target.value)}
+                      required
+                    />
                   </label>
                   <label>
                     Timezone
                     <input value={editTimezone} onChange={(event) => setEditTimezone(event.target.value)} required />
                   </label>
+                  {editingCustomCron ? (
+                    <p className="small">
+                      Jadwal sebelumnya adalah cron kustom. Saat disimpan, jadwal akan diubah ke mode harian sesuai
+                      waktu di atas.
+                    </p>
+                  ) : null}
                   <div className="schedule-actions">
                     <button type="submit">Save</button>
                     <button
@@ -132,9 +227,11 @@ export function ScheduleManager({
                 </form>
               ) : (
                 <div>
-                  <strong>{schedule.deviceId}</strong> - {schedule.action} - {schedule.cron}
+                  <strong>{deviceNameById.get(schedule.deviceId) ?? schedule.deviceId}</strong> ({schedule.deviceId}) -{' '}
+                  {schedule.action}
                   <p className="small">
-                    TZ: {schedule.timezone} | Next: {new Date(schedule.nextRunAt).toLocaleString()}
+                    {describeScheduleTime(schedule)} | TZ: {schedule.timezone} | Next:{' '}
+                    {new Date(schedule.nextRunAt).toLocaleString()}
                   </p>
                 </div>
               )}
@@ -142,10 +239,12 @@ export function ScheduleManager({
                 <button onClick={() => onSelectSchedule(schedule.id)}>Runs</button>
                 <button
                   onClick={() => {
+                    const parsedTime = cronToDailyTime(schedule.cron)
                     setEditingId(schedule.id)
                     setEditAction(schedule.action)
-                    setEditCron(schedule.cron)
+                    setEditTime(parsedTime ?? fallbackTimeFromNextRun(schedule))
                     setEditTimezone(schedule.timezone)
+                    setEditingCustomCron(parsedTime == null)
                   }}
                 >
                   Edit

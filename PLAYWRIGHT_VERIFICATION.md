@@ -3,6 +3,7 @@
 Tanggal verifikasi:
 - 16 February 2026: local development.
 - 17 February 2026: local production single port + cloud single Worker.
+- 17 February 2026: audit console browser local production + cloud (error/warning check).
 
 ## Target Uji
 
@@ -10,7 +11,7 @@ Tanggal verifikasi:
   - Frontend: `http://127.0.0.1:5173`
   - Backend: `http://127.0.0.1:8787`
 - Local production single port:
-  - App/API: `http://127.0.0.1:8080`
+  - App/API: `http://127.0.0.1:8787`
 - Cloudflare production single Worker:
   - App/API: `https://smartlamp-backend.robert-rully.workers.dev`
 
@@ -24,7 +25,14 @@ Tanggal verifikasi:
 6. OpenAPI endpoint `GET /api/v1/openapi.json`: `PASS`
 7. Open integration endpoint `GET /api/v1/devices`: `PASS`
 8. Cloud single-Worker serve frontend di `/` + API same-origin `/api/*`: `PASS`
-9. `POST /api/v1/commands/execute`: `FAIL` (502), root cause broker auth (`MQTT CONNACK code 5`)
+9. `POST /api/v1/commands/execute`: `PASS`
+10. Tambah device dari dashboard cloud (`POST /api/v1/devices`): `PASS`
+11. Jadwal otomatis UI berbasis waktu `HH:mm` (create/edit/list) di cloud: `PASS`
+12. Publish command MQTT dari dashboard cloud (verifikasi `mosquitto_sub` topic `home/{deviceId}/cmd`): `PASS`
+13. Local dev: publish LWT `OFFLINE/ONLINE` ke `home/lampu-ruang-tamu/lwt` mengubah badge device realtime: `PASS`
+14. Local dev: setelah reload dashboard, SSE reconnect + resubscribe tetap menerima event LWT: `PASS`
+15. Audit console browser local production (`http://127.0.0.1:8787`): `PASS` (`Errors: 0`, `Warnings: 0`).
+16. Audit console browser cloud Worker (`https://smartlamp-backend.robert-rully.workers.dev`): `PASS` (`Errors: 0`, `Warnings: 0`).
 
 ## Tambahan Verifikasi API (Local, Non-Playwright)
 
@@ -38,6 +46,9 @@ Tanggal verifikasi:
    - refresh pertama sukses,
    - reuse token lama ditolak (401 `AUTH_INVALID_TOKEN`),
    - token refresh terbaru tetap valid: `PASS`.
+8. Verifikasi paralel 10 device (`scripts/verify-parallel-devices.sh`, cloud): `PASS` (`OK: 10`, `FAIL: 0`).
+9. Pengukuran latency command -> status ack (`scripts/measure-status-ack-latency.sh`, cloud simulasi status): `PASS` (tercatat nilai ms).
+10. Verifikasi keamanan command envelope (`scripts/verify-command-security.sh`): `PASS` (tampered/replay/expired ditolak).
 
 ## Evidence
 
@@ -46,6 +57,5 @@ Tanggal verifikasi:
 
 ## Pending
 
-1. Verifikasi end-to-end command ON/OFF `PASS` setelah kredensial MQTT broker valid.
-2. Verifikasi realtime status/lwt end-to-end dari device fisik.
-3. Verifikasi token expired dan skenario sesi jangka panjang via E2E script.
+1. Verifikasi realtime status end-to-end dari device fisik (payload status nyata dari ESP32).
+2. Verifikasi skenario sesi jangka panjang (auto refresh berulang + expiry boundary) via E2E script.

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import {
   bootstrap,
+  createDevice,
   createSchedule,
   deleteSchedule,
   executeCommand,
@@ -16,6 +17,7 @@ import { createRealtimeClient, type RealtimeClient } from './lib/realtime'
 import type { BootstrapResponse, Device, ScheduleRule, ScheduleRun } from './lib/types'
 import { DeviceCard, type DeviceState } from './components/DeviceCard'
 import { LoginForm } from './components/LoginForm'
+import { DeviceManager } from './components/DeviceManager'
 import { ScheduleManager } from './components/ScheduleManager'
 
 type DeviceStateMap = Record<string, DeviceState>
@@ -86,7 +88,7 @@ export default function App() {
           const previous = prev[deviceId] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: true,
+            online: false,
           }
 
           const nextPower = typeof payload.power === 'string' ? payload.power : previous.power
@@ -102,7 +104,7 @@ export default function App() {
             [deviceId]: {
               power: nextPower,
               updatedAt: nextTs,
-              online: true,
+              online: previous.online,
             },
           }
         })
@@ -204,15 +206,34 @@ export default function App() {
           ...(prev[deviceId] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: true,
+            online: false,
           }),
           power: action,
           updatedAt: new Date().toISOString(),
-          online: true,
+          online: prev[deviceId]?.online ?? false,
         },
       }))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Command gagal'
+      setGlobalError(message)
+    }
+  }
+
+  async function handleCreateDevice(input: {
+    deviceId: string
+    name: string
+    location?: string
+    hmacSecret?: string
+  }) {
+    setGlobalError(null)
+    try {
+      await createDevice({
+        ...input,
+        idempotencyKey: crypto.randomUUID(),
+      })
+      await hydrateDashboard()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Tambah device gagal'
       setGlobalError(message)
     }
   }
@@ -324,6 +345,8 @@ export default function App() {
       </header>
 
       {globalError ? <p className="error global-error">{globalError}</p> : null}
+
+      <DeviceManager onCreateDevice={handleCreateDevice} />
 
       <section className="device-grid">
         {sortedDevices.map((device) => (

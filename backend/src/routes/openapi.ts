@@ -38,6 +38,7 @@ openApiRoutes.get('/openapi.json', (c) => {
       },
       '/api/v1/devices': {
         get: { summary: 'List devices' },
+        post: { summary: 'Create device and attach to current user' },
       },
       '/api/v1/devices/{deviceId}': {
         get: { summary: 'Get device detail' },

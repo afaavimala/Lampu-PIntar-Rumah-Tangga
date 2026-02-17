@@ -5,6 +5,7 @@ import { fail } from '../lib/response'
 import { listBestStatus } from '../lib/status'
 import { listDevicesByPrincipal } from '../lib/db'
 import { getRealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
+import { readLwtSnapshotOverWs } from '../lib/mqtt-ws'
 
 export const realtimeRoutes = new Hono<AppEnv>()
 
@@ -38,6 +39,7 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
       })
 
       const lastStatusMap = new Map<string, string>()
+      const lastLwtMap = new Map<string, string>()
       for (const status of initialStatuses) {
         const signature = `${status.power}|${status.updatedAt ?? ''}|${status.source}`
         lastStatusMap.set(status.deviceId, signature)
@@ -61,26 +63,60 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
           send(event)
         })
       } else {
-        pollingTimer = setInterval(() => {
-          void (async () => {
-            const statuses = await listBestStatus(c.env.DB, principal)
-            for (const status of statuses) {
-              const signature = `${status.power}|${status.updatedAt ?? ''}|${status.source}`
-              if (lastStatusMap.get(status.deviceId) === signature) {
+        const emitFallbackSnapshot = async () => {
+          const statuses = await listBestStatus(c.env.DB, principal)
+          for (const status of statuses) {
+            const signature = `${status.power}|${status.updatedAt ?? ''}|${status.source}`
+            if (lastStatusMap.get(status.deviceId) === signature) {
+              continue
+            }
+            lastStatusMap.set(status.deviceId, signature)
+            send({
+              type: 'status',
+              deviceId: status.deviceId,
+              payload: {
+                power: status.power,
+                updatedAt: status.updatedAt,
+                source: status.source,
+              },
+              ts: Date.now(),
+            })
+          }
+
+          try {
+            const lwtSnapshot = await readLwtSnapshotOverWs({
+              url: c.env.MQTT_WS_URL,
+              username: c.env.MQTT_USERNAME,
+              password: c.env.MQTT_PASSWORD,
+              clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
+              deviceIds,
+            })
+
+            for (const [deviceId, payload] of Object.entries(lwtSnapshot)) {
+              const normalized = payload.trim().toUpperCase()
+              if (lastLwtMap.get(deviceId) === normalized) {
                 continue
               }
-              lastStatusMap.set(status.deviceId, signature)
+              lastLwtMap.set(deviceId, normalized)
               send({
-                type: 'status',
-                deviceId: status.deviceId,
-                payload: {
-                  power: status.power,
-                  updatedAt: status.updatedAt,
-                  source: status.source,
-                },
+                type: 'lwt',
+                deviceId,
+                payload,
                 ts: Date.now(),
               })
             }
+          } catch {
+            // ignore mqtt snapshot error for stream stability
+          }
+        }
+
+        void emitFallbackSnapshot().catch(() => {
+          // ignore first snapshot error for stream stability
+        })
+
+        pollingTimer = setInterval(() => {
+          void (async () => {
+            await emitFallbackSnapshot()
           })().catch(() => {
             // ignore polling error for stream stability
           })

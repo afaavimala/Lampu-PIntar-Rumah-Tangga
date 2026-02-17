@@ -87,6 +87,25 @@ export function bootstrap() {
   return apiFetch<BootstrapResponse>('/api/v1/bootstrap')
 }
 
+export function createDevice(input: {
+  deviceId: string
+  name: string
+  location?: string
+  hmacSecret?: string
+  idempotencyKey: string
+}) {
+  return apiFetch<{ id: string; name: string; location: string | null }>('/api/v1/devices', {
+    method: 'POST',
+    headers: jsonHeaders(input.idempotencyKey),
+    body: JSON.stringify({
+      deviceId: input.deviceId,
+      name: input.name,
+      location: input.location,
+      hmacSecret: input.hmacSecret,
+    }),
+  })
+}
+
 export function signCommand(input: {
   deviceId: string
   action: CommandAction

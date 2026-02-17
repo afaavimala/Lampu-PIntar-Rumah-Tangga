@@ -21,6 +21,7 @@ export function DeviceCard({ device, state, onAction }: DeviceCardProps) {
           {state.online ? 'ONLINE' : 'OFFLINE'}
         </span>
       </header>
+      <p className="small">Device ID: {device.id}</p>
       <p className="device-location">{device.location ?? 'Lokasi belum di-set'}</p>
       <p className="power-state">Power: {state.power}</p>
       <p className="last-update">

@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+echo "[start-production] Syncing production env from root .env ..."
+bash "$ROOT_DIR/scripts/env-production.sh"
+
 if [[ ! -f "$ROOT_DIR/backend/.env.production" ]]; then
   echo "[start-production] Missing backend/.env.production. Run: npm run env:production"
   exit 1

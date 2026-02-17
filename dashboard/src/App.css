@@ -140,6 +140,25 @@ button.danger {
   margin: 0.9rem 0;
 }
 
+.device-create {
+  margin-top: 1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.95rem;
+}
+
+.device-create h3 {
+  margin-top: 0;
+}
+
+.device-create-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+
 .device-grid {
   margin-top: 1rem;
   display: grid;
