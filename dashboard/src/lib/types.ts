@@ -23,10 +23,12 @@ export type Device = {
 
 export type BootstrapResponse = {
   devices: Device[]
-  realtime?: {
-    mode: 'proxy_sse'
-    streamPath: string
-  }
+  realtime:
+    | {
+        mode: 'proxy_sse'
+        streamPath: string
+      }
+    | null
 }
 
 export type CommandEnvelope = {

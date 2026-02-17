@@ -52,6 +52,20 @@ export default function App() {
   async function hydrateDashboard(boot?: BootstrapResponse) {
     setGlobalError(null)
     const bootstrapData = boot ?? (await bootstrap())
+    if (!bootstrapData.realtime) {
+      setHasSession(false)
+      setDevices([])
+      setDeviceState({})
+      setSchedules([])
+      setScheduleRuns([])
+      setSelectedScheduleId(null)
+      if (realtimeRef.current) {
+        await realtimeRef.current.disconnect()
+        realtimeRef.current = null
+      }
+      return
+    }
+
     setHasSession(true)
     setDevices(bootstrapData.devices)
 
