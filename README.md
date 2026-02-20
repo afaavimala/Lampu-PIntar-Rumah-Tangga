@@ -105,7 +105,7 @@ VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/measure-status-ack-latency.sh
 cp .env.example .env
 # edit .env sesuai environment lokal
 npm run setup:local
-npm run dev
+
 ```
 
 ### Opsi manual

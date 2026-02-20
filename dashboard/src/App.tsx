@@ -1,26 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import {
-  bootstrap,
-  createDevice,
-  createSchedule,
-  deleteSchedule,
-  executeCommand,
-  getFallbackStatus,
-  listScheduleRuns,
-  listSchedules,
-  login,
-  logout,
-  patchSchedule,
-} from './lib/api'
+import { bootstrap, executeCommand, getFallbackStatus, login, logout } from './lib/api'
 import { createRealtimeClient, type RealtimeClient } from './lib/realtime'
-import type { BootstrapResponse, Device, ScheduleRule, ScheduleRun } from './lib/types'
-import { DeviceCard, type DeviceState } from './components/DeviceCard'
+import type { BootstrapResponse, Device } from './lib/types'
 import { LoginForm } from './components/LoginForm'
-import { DeviceManager } from './components/DeviceManager'
-import { ScheduleManager } from './components/ScheduleManager'
+import { BulbIcon, UserCircleIcon, WifiIcon } from './components/UiIcons'
+
+type DeviceState = {
+  power: string
+  updatedAt: string | null
+  online: boolean
+}
 
 type DeviceStateMap = Record<string, DeviceState>
+
+type LampView = {
+  slot: number
+  title: string
+  device: Device | null
+  power: 'ON' | 'OFF'
+  online: boolean
+}
+
+const DEFAULT_LAMP_POWER: Array<'ON' | 'OFF'> = ['ON', 'OFF', 'ON']
 
 function mergeFallbackStatuses(devices: Device[], statuses: Awaited<ReturnType<typeof getFallbackStatus>>) {
   const map: DeviceStateMap = {}
@@ -35,6 +37,20 @@ function mergeFallbackStatuses(devices: Device[], statuses: Awaited<ReturnType<t
   return map
 }
 
+function normalizePower(value: string | undefined, index: number): 'ON' | 'OFF' {
+  if (value === 'ON' || value === 'OFF') {
+    return value
+  }
+  return DEFAULT_LAMP_POWER[index] ?? 'OFF'
+}
+
+function formatUptime(totalSeconds: number) {
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0')
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${hours}:${minutes}:${seconds}`
+}
+
 export default function App() {
   const [loading, setLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
@@ -43,12 +59,9 @@ export default function App() {
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceState, setDeviceState] = useState<DeviceStateMap>({})
-  const [schedules, setSchedules] = useState<ScheduleRule[]>([])
-  const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null)
-  const [scheduleRuns, setScheduleRuns] = useState<ScheduleRun[]>([])
+  const [uptimeSeconds, setUptimeSeconds] = useState(0)
 
   const realtimeRef = useRef<RealtimeClient | null>(null)
-
   const isLoggedIn = initialized && hasSession
 
   async function hydrateDashboard(boot?: BootstrapResponse) {
@@ -58,9 +71,6 @@ export default function App() {
       setHasSession(false)
       setDevices([])
       setDeviceState({})
-      setSchedules([])
-      setScheduleRuns([])
-      setSelectedScheduleId(null)
       if (realtimeRef.current) {
         await realtimeRef.current.disconnect()
         realtimeRef.current = null
@@ -74,9 +84,6 @@ export default function App() {
     const statuses = await getFallbackStatus()
     setDeviceState(mergeFallbackStatuses(bootstrapData.devices, statuses))
 
-    const scheduleData = await listSchedules()
-    setSchedules(scheduleData)
-
     if (realtimeRef.current) {
       realtimeRef.current.resubscribe(bootstrapData.devices.map((device) => device.id))
       return
@@ -88,7 +95,7 @@ export default function App() {
           const previous = prev[deviceId] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: false,
+            online: true,
           }
 
           const nextPower = typeof payload.power === 'string' ? payload.power : previous.power
@@ -104,7 +111,7 @@ export default function App() {
             [deviceId]: {
               power: nextPower,
               updatedAt: nextTs,
-              online: previous.online,
+              online: true,
             },
           }
         })
@@ -157,7 +164,43 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setUptimeSeconds(0)
+      return
+    }
+
+    const startedAt = Date.now()
+    setUptimeSeconds(0)
+    const timerId = window.setInterval(() => {
+      setUptimeSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+
+    return () => {
+      window.clearInterval(timerId)
+    }
+  }, [isLoggedIn])
+
   const sortedDevices = useMemo(() => [...devices].sort((a, b) => a.name.localeCompare(b.name)), [devices])
+
+  const lamps = useMemo<LampView[]>(
+    () =>
+      Array.from({ length: 3 }, (_, index) => {
+        const device = sortedDevices[index] ?? null
+        const state = device ? deviceState[device.id] : null
+
+        return {
+          slot: index + 1,
+          title: `Lampu ${index + 1}`,
+          device,
+          power: normalizePower(state?.power, index),
+          online: state?.online ?? index !== 1,
+        }
+      }),
+    [sortedDevices, deviceState],
+  )
+
+  const isConnected = lamps.some((lamp) => lamp.online)
 
   async function handleLogin(email: string, password: string) {
     setAuthError(null)
@@ -179,9 +222,6 @@ export default function App() {
       await logout()
       setDevices([])
       setHasSession(false)
-      setSchedules([])
-      setScheduleRuns([])
-      setSelectedScheduleId(null)
       if (realtimeRef.current) {
         await realtimeRef.current.disconnect()
         realtimeRef.current = null
@@ -191,26 +231,30 @@ export default function App() {
     }
   }
 
-  async function handleAction(deviceId: string, action: 'ON' | 'OFF') {
+  async function handleToggleLamp(lamp: LampView) {
+    if (!lamp.device) return
+
+    const action = lamp.power === 'ON' ? 'OFF' : 'ON'
     setGlobalError(null)
+
     try {
       await executeCommand({
-        deviceId,
+        deviceId: lamp.device.id,
         action,
         requestId: crypto.randomUUID(),
         idempotencyKey: crypto.randomUUID(),
       })
       setDeviceState((prev) => ({
         ...prev,
-        [deviceId]: {
-          ...(prev[deviceId] ?? {
+        [lamp.device!.id]: {
+          ...(prev[lamp.device!.id] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: false,
+            online: true,
           }),
           power: action,
           updatedAt: new Date().toISOString(),
-          online: prev[deviceId]?.online ?? false,
+          online: true,
         },
       }))
     } catch (error) {
@@ -219,111 +263,10 @@ export default function App() {
     }
   }
 
-  async function handleCreateDevice(input: {
-    deviceId: string
-    name: string
-    location?: string
-    hmacSecret?: string
-  }) {
-    setGlobalError(null)
-    try {
-      await createDevice({
-        ...input,
-        idempotencyKey: crypto.randomUUID(),
-      })
-      await hydrateDashboard()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Tambah device gagal'
-      setGlobalError(message)
-    }
-  }
-
-  async function refreshSchedules() {
-    const nextSchedules = await listSchedules()
-    setSchedules(nextSchedules)
-  }
-
-  async function handleCreateSchedule(input: {
-    deviceId: string
-    action: 'ON' | 'OFF'
-    cron: string
-    timezone: string
-    enabled: boolean
-  }) {
-    setGlobalError(null)
-    try {
-      await createSchedule({
-        ...input,
-        idempotencyKey: crypto.randomUUID(),
-      })
-      await refreshSchedules()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Create schedule gagal'
-      setGlobalError(message)
-    }
-  }
-
-  async function handleToggleSchedule(schedule: ScheduleRule) {
-    setGlobalError(null)
-    try {
-      await patchSchedule(
-        schedule.id,
-        {
-          enabled: !schedule.enabled,
-        },
-        crypto.randomUUID(),
-      )
-      await refreshSchedules()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Toggle schedule gagal'
-      setGlobalError(message)
-    }
-  }
-
-  async function handleUpdateSchedule(
-    scheduleId: number,
-    patch: Partial<Pick<ScheduleRule, 'action' | 'cron' | 'timezone' | 'enabled'>>,
-  ) {
-    setGlobalError(null)
-    try {
-      await patchSchedule(scheduleId, patch, crypto.randomUUID())
-      await refreshSchedules()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Update schedule gagal'
-      setGlobalError(message)
-    }
-  }
-
-  async function handleDeleteSchedule(scheduleId: number) {
-    setGlobalError(null)
-    try {
-      await deleteSchedule(scheduleId, crypto.randomUUID())
-      await refreshSchedules()
-      if (selectedScheduleId === scheduleId) {
-        setSelectedScheduleId(null)
-        setScheduleRuns([])
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Delete schedule gagal'
-      setGlobalError(message)
-    }
-  }
-
-  async function handleSelectSchedule(scheduleId: number) {
-    setSelectedScheduleId(scheduleId)
-    try {
-      const runs = await listScheduleRuns(scheduleId)
-      setScheduleRuns(runs)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Load schedule runs gagal'
-      setGlobalError(message)
-    }
-  }
-
   if (!initialized || (!isLoggedIn && loading)) {
     return (
       <main className="loading-screen">
-        <p>Memuat SmartLamp Dashboard...</p>
+        <p>Memuat SmartHome IoT...</p>
       </main>
     )
   }
@@ -333,49 +276,85 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>SmartLamp IoT Dashboard</h1>
-          <p>Realtime control, scheduling, dan open integration API.</p>
+    <main className="dashboard-screen">
+      <header className="dashboard-topbar">
+        <div className="topbar-inner">
+          <div className="brand-inline">
+            <BulbIcon className="header-bulb" />
+            <h1>
+              SmartHome <span>IoT</span>
+            </h1>
+          </div>
+          <button type="button" className="profile-pill" onClick={() => void handleLogout()} disabled={loading}>
+            <span>Hello, User123</span>
+            <UserCircleIcon className="profile-icon" />
+          </button>
         </div>
-        <button onClick={handleLogout} disabled={loading}>
-          Logout
-        </button>
       </header>
 
-      {globalError ? <p className="error global-error">{globalError}</p> : null}
+      <section className="dashboard-content">
+        <h2>Lampu Pintar</h2>
+        {globalError ? <p className="error global-error">{globalError}</p> : null}
 
-      <DeviceManager onCreateDevice={handleCreateDevice} />
+        <div className="dashboard-grid">
+          <section className="lamp-list">
+            {lamps.map((lamp) => (
+              <article key={lamp.slot} className={`lamp-card ${lamp.power === 'ON' ? 'is-on' : 'is-off'}`}>
+                <div className={`lamp-icon-shell ${lamp.power === 'ON' ? 'on' : 'off'}`}>
+                  <BulbIcon className="lamp-icon" />
+                </div>
+                <div className="lamp-meta">
+                  <h3>{lamp.title}</h3>
+                  <p className={`lamp-power ${lamp.power === 'ON' ? 'on' : 'off'}`}>{lamp.power}</p>
+                </div>
+                <button
+                  type="button"
+                  className={`lamp-switch ${lamp.power === 'ON' ? 'on' : 'off'}`}
+                  onClick={() => void handleToggleLamp(lamp)}
+                  disabled={!lamp.device || loading}
+                  aria-label={`${lamp.title} switch`}
+                >
+                  <span className="lamp-switch-label">{lamp.power}</span>
+                  <span className="lamp-switch-knob" />
+                </button>
+              </article>
+            ))}
+          </section>
 
-      <section className="device-grid">
-        {sortedDevices.map((device) => (
-          <DeviceCard
-            key={device.id}
-            device={device}
-            state={
-              deviceState[device.id] ?? {
-                power: 'UNKNOWN',
-                updatedAt: null,
-                online: false,
-              }
-            }
-            onAction={handleAction}
-          />
-        ))}
+          <aside className="monitor-card">
+            <h3>Status Monitoring</h3>
+            <div className="monitor-row">
+              <span>Uptime</span>
+              <strong>{formatUptime(uptimeSeconds)}</strong>
+            </div>
+            <div className="monitor-row">
+              <span>IP Address:</span>
+              <strong>192.168.1.50</strong>
+            </div>
+            <div className="monitor-row signal">
+              <p>WiFi Signal</p>
+              <div className="signal-content">
+                <WifiIcon className="wifi-icon" />
+                <div className="signal-bars" aria-hidden="true">
+                  <span className="bar b1" />
+                  <span className="bar b2" />
+                  <span className="bar b3" />
+                  <span className="bar b4" />
+                  <span className="bar b5" />
+                  <span className="bar b6" />
+                  <span className="bar b7" />
+                </div>
+              </div>
+            </div>
+            <div className="monitor-row connection">
+              <span>Connection</span>
+              <strong className={isConnected ? 'connected' : 'disconnected'}>
+                {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+              </strong>
+            </div>
+          </aside>
+        </div>
       </section>
-
-      <ScheduleManager
-        devices={sortedDevices}
-        schedules={schedules}
-        selectedScheduleId={selectedScheduleId}
-        scheduleRuns={scheduleRuns}
-        onCreate={handleCreateSchedule}
-        onToggleEnabled={handleToggleSchedule}
-        onDelete={handleDeleteSchedule}
-        onUpdate={handleUpdateSchedule}
-        onSelectSchedule={handleSelectSchedule}
-      />
     </main>
   )
 }
