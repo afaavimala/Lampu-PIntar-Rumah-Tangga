@@ -271,52 +271,52 @@
   <text x="605" y="294" class="linkLabel linkLabelDiag">HTTPS REST</text>
 
   <path d="M 490 385 L 720 900" class="altLink"/>
-  <text x="570" y="614" class="linkLabel linkLabelDiag">Worker API alt</text>
+  <text x="540" y="690" class="linkLabel linkLabelDiag" transform="rotate(66 540 690)">Worker API alt</text>
 
   <path d="M 490 525 L 720 345" class="mainLink"/>
-  <text x="622" y="388" class="linkLabel linkLabelDiag">Bearer JWT</text>
+  <text x="666" y="372" class="linkLabel linkLabelDiag" transform="rotate(-38 666 372)">Bearer JWT</text>
 
   <path d="M 490 565 L 720 905" class="altLink"/>
-  <text x="584" y="726" class="linkLabel linkLabelDiag">Integration Worker</text>
+  <text x="642" y="792" class="linkLabel linkLabelDiag" transform="rotate(56 642 792)">Integration Worker</text>
 
   <path d="M 1620 325 L 1930 325" class="mainLink"/>
   <text x="1775" y="294" class="linkLabel linkLabelDiag">MQTT cmd publish</text>
 
   <path d="M 1620 500 L 1930 390" class="statusLink"/>
-  <text x="1774" y="404" class="linkLabel linkLabelDiag">MQTT realtime sub</text>
+  <text x="1756" y="398" class="linkLabel linkLabelDiag" transform="rotate(-20 1756 398)">MQTT realtime sub</text>
 
   <path d="M 1620 655 L 1930 370" class="mainLink"/>
-  <text x="1772" y="474" class="linkLabel linkLabelDiag">MQTT schedule</text>
+  <text x="1746" y="532" class="linkLabel linkLabelDiag" transform="rotate(-43 1746 532)">MQTT schedule</text>
 
   <path d="M 1620 365 L 1930 565" class="dataLink"/>
-  <text x="1788" y="430" class="linkLabel linkLabelDiag">SQL MariaDB</text>
+  <text x="1810" y="456" class="linkLabel linkLabelDiag" transform="rotate(33 1810 456)">SQL MariaDB</text>
 
   <path d="M 1620 915 L 2310 565" class="dataLink"/>
-  <text x="1968" y="700" class="linkLabel linkLabelDiag">D1 binding</text>
+  <text x="1990" y="690" class="linkLabel linkLabelDiag" transform="rotate(-27 1990 690)">D1 binding</text>
 
   <path d="M 1620 1080 L 1930 430" class="statusDashed"/>
-  <text x="1766" y="724" class="linkLabel linkLabelDiag">LWT snapshot</text>
+  <text x="1736" y="770" class="linkLabel linkLabelDiag" transform="rotate(-64 1736 770)">LWT snapshot</text>
 
   <path d="M 2640 355 L 3270 355" class="mainLink"/>
   <text x="2958" y="324" class="linkLabel linkLabelDiag">ESP32 cmd</text>
 
   <path d="M 2640 405 L 3270 615" class="mainLink"/>
-  <text x="2962" y="468" class="linkLabel linkLabelDiag">Tasmota POWER cmd</text>
+  <text x="2986" y="486" class="linkLabel linkLabelDiag" transform="rotate(18 2986 486)">Tasmota POWER cmd</text>
 
   <path d="M 3270 430 L 2640 430" class="statusLink"/>
   <text x="2958" y="399" class="linkLabel linkLabelDiag">ESP32 status/lwt</text>
 
   <path d="M 3270 675 L 2640 500" class="statusLink"/>
-  <text x="2960" y="544" class="linkLabel linkLabelDiag">Tasmota stat/tele</text>
+  <text x="2938" y="570" class="linkLabel linkLabelDiag" transform="rotate(16 2938 570)">Tasmota stat/tele</text>
 
   <path d="M 3790 835 L 3870 835" class="mainLink"/>
   <text x="3830" y="804" class="linkLabel linkLabelDiag">NTP network</text>
 
   <path d="M 720 500 L 490 350" class="statusLink"/>
-  <text x="620" y="386" class="linkLabel linkLabelDiag">SSE status/lwt</text>
+  <text x="592" y="430" class="linkLabel linkLabelDiag" transform="rotate(33 592 430)">SSE status/lwt</text>
 
   <path d="M 720 1080 L 490 380" class="statusDashed"/>
-  <text x="588" y="700" class="linkLabel linkLabelDiag">Worker SSE stream</text>
+  <text x="550" y="842" class="linkLabel linkLabelDiag" transform="rotate(72 550 842)">Worker SSE stream</text>
 
   <rect x="70" y="1320" width="4430" height="300" class="node"/>
   <text x="96" y="1364" class="nodeTitle">Command + Feedback Flow (Actual Implementation)</text>
