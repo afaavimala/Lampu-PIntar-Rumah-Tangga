@@ -1,7 +1,7 @@
 import { computeNextRunAt } from './schedules'
 import { createSignedEnvelope, logCommandSignature } from './commands'
-import { publishMqttOverWs } from './mqtt-ws'
 import type { EnvBindings } from '../types/app'
+import { publishCompatibleCommandOverWs } from './mqtt-command-publish'
 
 type DueScheduleRow = {
   schedule_id: number
@@ -99,14 +99,12 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
       hmacSecret,
     })
 
-    await publishMqttOverWs({
+    await publishCompatibleCommandOverWs({
       url: env.MQTT_WS_URL,
       username: env.MQTT_USERNAME,
       password: env.MQTT_PASSWORD,
       clientIdPrefix: env.MQTT_CLIENT_ID_PREFIX,
-      topic: `home/${row.device_id}/cmd`,
-      payload: JSON.stringify(envelope),
-    })
+    }, envelope)
 
     await env.DB
       .prepare(

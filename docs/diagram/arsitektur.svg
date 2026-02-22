@@ -1,0 +1,320 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4580" height="1840" viewBox="0 0 4580 1840">
+  <defs>
+    <pattern id="smallGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#1b3f67" stroke-width="0.9" opacity="0.42"/>
+    </pattern>
+    <pattern id="blueGrid" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="120" height="120" fill="url(#smallGrid)"/>
+      <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#2d5a8e" stroke-width="1.3" opacity="0.72"/>
+    </pattern>
+
+    <marker id="arrowMain" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ed0ff"/>
+    </marker>
+    <marker id="arrowStatus" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fe3c1"/>
+    </marker>
+    <marker id="arrowData" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffd89a"/>
+    </marker>
+
+    <style>
+      .title {
+        fill: #d9efff;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 44px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+      }
+      .subtitle {
+        fill: #9fc5e7;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 18px;
+      }
+      .zone {
+        fill: rgba(11, 35, 58, 0.54);
+        stroke: #3b6997;
+        stroke-width: 2;
+        stroke-dasharray: 10 7;
+      }
+      .zoneTitle {
+        fill: #a9d1f3;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      .node {
+        fill: rgba(17, 42, 69, 0.88);
+        stroke: #a7d5ff;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeAlt {
+        fill: rgba(20, 48, 77, 0.88);
+        stroke: #8fe3c1;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeData {
+        fill: rgba(58, 46, 20, 0.76);
+        stroke: #ffd89a;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeEdge {
+        fill: rgba(68, 35, 36, 0.76);
+        stroke: #ffb5ba;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeTitle {
+        fill: #e6f5ff;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .nodeText {
+        fill: #b8d7f2;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 15px;
+      }
+      .mainLink {
+        fill: none;
+        stroke: #9ed0ff;
+        stroke-width: 2.7;
+        marker-end: url(#arrowMain);
+      }
+      .statusLink {
+        fill: none;
+        stroke: #8fe3c1;
+        stroke-width: 2.6;
+        marker-end: url(#arrowStatus);
+      }
+      .statusDashed {
+        fill: none;
+        stroke: #8fe3c1;
+        stroke-width: 2.4;
+        stroke-dasharray: 9 7;
+        marker-end: url(#arrowStatus);
+      }
+      .dataLink {
+        fill: none;
+        stroke: #ffd89a;
+        stroke-width: 2.3;
+        marker-end: url(#arrowData);
+      }
+      .altLink {
+        fill: none;
+        stroke: #7fa9d3;
+        stroke-width: 2.2;
+        stroke-dasharray: 8 6;
+        marker-end: url(#arrowMain);
+      }
+      .linkLabel {
+        fill: #ffffff;
+        font-family: 'Consolas', 'DejaVu Sans Mono', monospace;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.15px;
+        stroke: #0a2740;
+        stroke-width: 4.8;
+        paint-order: stroke fill;
+      }
+      .linkLabelDiag {
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .legendText {
+        fill: #b7d7f0;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 15px;
+      }
+    </style>
+  </defs>
+
+  <rect width="4580" height="1840" fill="#07192d"/>
+  <rect width="4580" height="1840" fill="url(#blueGrid)"/>
+  <rect x="22" y="22" width="4536" height="1796" fill="none" stroke="#3f6b96" stroke-width="2"/>
+
+  <text x="64" y="92" class="title">SMARTLAMP ARSITEKTUR EKOSISTEM (END-TO-END)</text>
+  <text x="64" y="124" class="subtitle">Selaras dengan blueprint: alur command, status/LWT realtime, scheduler, storage, serta mode lokal dan cloud pada jalur yang setara.</text>
+
+  <rect x="70" y="170" width="500" height="1110" class="zone"/>
+  <text x="96" y="204" class="zoneTitle">CLIENT ACCESS</text>
+
+  <rect x="710" y="170" width="920" height="520" class="zone"/>
+  <text x="736" y="204" class="zoneTitle">CONTROL PLANE (LOCAL)</text>
+
+  <rect x="710" y="730" width="920" height="550" class="zone"/>
+  <text x="736" y="764" class="zoneTitle">CONTROL PLANE (CLOUD)</text>
+
+  <rect x="1830" y="170" width="780" height="1110" class="zone"/>
+  <text x="1856" y="204" class="zoneTitle">MQTT + DATA SERVICES</text>
+
+  <rect x="3230" y="170" width="1240" height="1110" class="zone"/>
+  <text x="3256" y="204" class="zoneTitle">EDGE DEVICE LAYER</text>
+
+  <rect x="110" y="260" width="420" height="160" class="node"/>
+  <text x="142" y="302" class="nodeTitle">Dashboard Web</text>
+  <text x="142" y="330" class="nodeText">React + Vite + session login</text>
+  <text x="142" y="354" class="nodeText">Control ON/OFF + schedule</text>
+  <text x="142" y="378" class="nodeText">Terima stream SSE realtime</text>
+
+  <rect x="110" y="470" width="420" height="150" class="node"/>
+  <text x="142" y="512" class="nodeTitle">Integration Client</text>
+  <text x="142" y="540" class="nodeText">API key / bearer JWT</text>
+  <text x="142" y="564" class="nodeText">Akses /devices /schedules /status</text>
+
+  <rect x="110" y="660" width="420" height="150" class="node"/>
+  <text x="142" y="702" class="nodeTitle">Operator / DevOps</text>
+  <text x="142" y="730" class="nodeText">Provision secret dan device topic</text>
+  <text x="142" y="754" class="nodeText">Monitoring health + deploy mode</text>
+
+  <rect x="750" y="240" width="840" height="170" class="node"/>
+  <text x="782" y="282" class="nodeTitle">Hono API Lokal (Node.js)</text>
+  <text x="782" y="310" class="nodeText">Auth/session + ACL device + command signing</text>
+  <text x="782" y="334" class="nodeText">Publish command kompatibel ESP32/Tasmota via MQTT WSS</text>
+  <text x="782" y="358" class="nodeText">Sumber command manual dan API integrasi</text>
+
+  <rect x="750" y="440" width="840" height="140" class="nodeAlt"/>
+  <text x="782" y="482" class="nodeTitle">Realtime Proxy Lokal</text>
+  <text x="782" y="510" class="nodeText">Subscribe MQTT status/LWT persistent</text>
+  <text x="782" y="534" class="nodeText">Teruskan delta status ke dashboard via SSE</text>
+
+  <rect x="750" y="610" width="840" height="90" class="node"/>
+  <text x="782" y="652" class="nodeTitle">Scheduler Lokal</text>
+  <text x="782" y="676" class="nodeText">runDueSchedules() via setInterval</text>
+
+  <rect x="750" y="810" width="840" height="180" class="node"/>
+  <text x="782" y="852" class="nodeTitle">Hono API Cloudflare Worker</text>
+  <text x="782" y="880" class="nodeText">Kontrak API sama dengan mode lokal</text>
+  <text x="782" y="904" class="nodeText">Publish command kompatibel via MQTT WSS</text>
+  <text x="782" y="928" class="nodeText">Single-origin app + API + binding ke D1</text>
+
+  <rect x="750" y="1020" width="840" height="150" class="nodeAlt"/>
+  <text x="782" y="1062" class="nodeTitle">Realtime Stream Cloud</text>
+  <text x="782" y="1090" class="nodeText">Worker subscribe MQTT per koneksi SSE</text>
+  <text x="782" y="1114" class="nodeText">Fallback snapshot retained + push ke browser</text>
+
+  <rect x="750" y="1200" width="840" height="90" class="node"/>
+  <text x="782" y="1242" class="nodeTitle">Scheduler Cloud</text>
+  <text x="782" y="1266" class="nodeText">Cron Trigger -> runDueSchedules()</text>
+
+  <rect x="1870" y="250" width="700" height="230" class="nodeData"/>
+  <text x="1902" y="292" class="nodeTitle">HiveMQ Broker</text>
+  <text x="1902" y="320" class="nodeText">MQTT WSS :8884/mqtt untuk backend lokal/cloud</text>
+  <text x="1902" y="344" class="nodeText">MQTT TLS :8883 untuk ESP32/Tasmota</text>
+  <text x="1902" y="368" class="nodeText">Bus command + status + LWT (retained)</text>
+  <text x="1902" y="392" class="nodeText">Routing publish/subscribe untuk semua mode</text>
+
+  <rect x="1870" y="520" width="700" height="180" class="nodeData"/>
+  <text x="1902" y="562" class="nodeTitle">Storage Layer</text>
+  <text x="1902" y="590" class="nodeText">MariaDB (lokal) + D1 (cloud)</text>
+  <text x="1902" y="614" class="nodeText">users, devices, schedules, command logs, sessions</text>
+  <text x="1902" y="638" class="nodeText">idempotency + audit data persistence</text>
+
+  <rect x="1870" y="740" width="700" height="280" class="nodeData"/>
+  <text x="1902" y="782" class="nodeTitle">MQTT Compatibility Contract</text>
+  <text x="1902" y="810" class="nodeText">Publish cmd: home/{id}/cmd, cmnd/{id}/POWER, {id}/cmnd/POWER</text>
+  <text x="1902" y="834" class="nodeText">Subscribe status: home/+/status, stat/+/POWER, stat/+/RESULT</text>
+  <text x="1902" y="858" class="nodeText">Subscribe lwt: home/+/lwt, tele/+/LWT (+ FullTopic variant)</text>
+  <text x="1902" y="882" class="nodeText">Normalisasi parser: ESP32 + Tasmota -> event status/lwt tunggal</text>
+  <text x="1902" y="906" class="nodeText">Dipakai konsisten di mode lokal maupun cloud</text>
+
+  <rect x="3270" y="250" width="1160" height="250" class="nodeEdge"/>
+  <text x="3302" y="292" class="nodeTitle">ESP32 + Tasmota Device Runtime</text>
+  <text x="3302" y="320" class="nodeText">Menerima command dari HiveMQ sesuai profile topic</text>
+  <text x="3302" y="344" class="nodeText">ESP32 verifikasi HMAC/nonce/expiry, Tasmota eksekusi POWER</text>
+  <text x="3302" y="368" class="nodeText">Keduanya publish status dan LWT kembali ke broker</text>
+  <text x="3302" y="392" class="nodeText">Satu jalur feedback untuk dashboard realtime</text>
+
+  <rect x="3270" y="540" width="520" height="150" class="nodeEdge"/>
+  <text x="3302" y="582" class="nodeTitle">Relay Lampu</text>
+  <text x="3302" y="610" class="nodeText">Aksi fisik ON/OFF dari command</text>
+  <text x="3302" y="634" class="nodeText">State dipantulkan ke MQTT status</text>
+
+  <rect x="3870" y="540" width="560" height="150" class="nodeEdge"/>
+  <text x="3902" y="582" class="nodeTitle">WiFi + NTP</text>
+  <text x="3902" y="610" class="nodeText">pool.ntp.org / time.nist.gov</text>
+  <text x="3902" y="634" class="nodeText">Sinkron waktu validasi command</text>
+
+  <rect x="3270" y="730" width="1160" height="280" class="nodeEdge"/>
+  <text x="3302" y="772" class="nodeTitle">Realtime Feedback Loop</text>
+  <text x="3302" y="800" class="nodeText">Device publish status/LWT -> HiveMQ retained -> backend subscribe</text>
+  <text x="3302" y="824" class="nodeText">Node mode: proxy persistent subscribe</text>
+  <text x="3302" y="848" class="nodeText">Cloud mode: subscribe per stream SSE + snapshot bootstrap</text>
+  <text x="3302" y="872" class="nodeText">UI dashboard update otomatis tanpa reload halaman</text>
+
+  <path d="M 530 340 L 750 340" class="mainLink"/>
+  <text x="640" y="308" class="linkLabel linkLabelDiag">HTTPS REST</text>
+
+  <path d="M 530 545 L 750 370" class="mainLink"/>
+  <text x="658" y="412" class="linkLabel linkLabelDiag">Bearer JWT</text>
+
+  <path d="M 530 380 L 750 900" class="altLink"/>
+  <text x="606" y="620" class="linkLabel linkLabelDiag">Worker API alt</text>
+
+  <path d="M 530 575 L 750 920" class="altLink"/>
+  <text x="618" y="736" class="linkLabel linkLabelDiag">Integration cloud</text>
+
+  <path d="M 530 735 L 750 1245" class="altLink"/>
+  <text x="604" y="970" class="linkLabel linkLabelDiag">Ops cron deploy</text>
+
+  <path d="M 1590 340 L 1870 340" class="mainLink"/>
+  <text x="1730" y="308" class="linkLabel linkLabelDiag">MQTT cmd publish</text>
+
+  <path d="M 1870 410 L 1590 520" class="statusLink"/>
+  <text x="1730" y="428" class="linkLabel linkLabelDiag">MQTT realtime sub</text>
+
+  <path d="M 1590 655 L 1870 390" class="mainLink"/>
+  <text x="1722" y="486" class="linkLabel linkLabelDiag">Scheduled cmd</text>
+
+  <path d="M 1590 375 L 1870 605" class="dataLink"/>
+  <text x="1742" y="450" class="linkLabel linkLabelDiag">SQL MariaDB</text>
+
+  <path d="M 1590 900 L 1870 420" class="mainLink"/>
+  <text x="1722" y="622" class="linkLabel linkLabelDiag">Cloud cmd publish</text>
+
+  <path d="M 1870 440 L 1590 1095" class="statusDashed"/>
+  <text x="1712" y="736" class="linkLabel linkLabelDiag">Cloud MQTT sub</text>
+
+  <path d="M 1590 1245 L 1870 450" class="altLink"/>
+  <text x="1712" y="818" class="linkLabel linkLabelDiag">Cloud cron run</text>
+
+  <path d="M 1590 955 L 1870 665" class="dataLink"/>
+  <text x="1718" y="768" class="linkLabel linkLabelDiag">D1 binding</text>
+
+  <path d="M 2570 360 L 3270 360" class="mainLink"/>
+  <text x="2920" y="328" class="linkLabel linkLabelDiag">ESP32 cmd</text>
+
+  <path d="M 2570 420 L 3270 630" class="mainLink"/>
+  <text x="2928" y="482" class="linkLabel linkLabelDiag">Tasmota POWER cmd</text>
+
+  <path d="M 3270 445 L 2570 445" class="statusLink"/>
+  <text x="2920" y="414" class="linkLabel linkLabelDiag">ESP32 status/lwt</text>
+
+  <path d="M 3270 690 L 2570 500" class="statusLink"/>
+  <text x="2930" y="554" class="linkLabel linkLabelDiag">Tasmota stat/tele</text>
+
+  <path d="M 3530 500 L 3530 540" class="mainLink"/>
+  <text x="3588" y="522" class="linkLabel linkLabelDiag">GPIO</text>
+
+  <path d="M 3790 615 L 3870 615" class="mainLink"/>
+  <text x="3830" y="586" class="linkLabel linkLabelDiag">NTP sync</text>
+
+  <path d="M 3270 860 L 2570 470" class="statusDashed"/>
+  <text x="2930" y="632" class="linkLabel linkLabelDiag">feedback publish</text>
+
+  <path d="M 750 510 L 530 360" class="statusLink"/>
+  <text x="654" y="396" class="linkLabel linkLabelDiag">SSE stream</text>
+
+  <path d="M 750 1095 L 530 390" class="statusDashed"/>
+  <text x="612" y="720" class="linkLabel linkLabelDiag">Worker SSE stream</text>
+
+  <rect x="70" y="1320" width="4430" height="300" class="node"/>
+  <text x="96" y="1364" class="nodeTitle">Ringkasan Sinkronisasi Mode Lokal vs Cloud</text>
+  <text x="96" y="1392" class="nodeText">1) Jalur command selalu backend -> HiveMQ -> device. 2) Jalur status/LWT selalu device -> HiveMQ -> backend -> SSE ke dashboard.</text>
+  <text x="96" y="1418" class="nodeText">3) Perbedaan mode hanya pada runtime kontrol (Node vs Worker), storage (MariaDB vs D1), dan pemicu scheduler (interval vs cron).</text>
+  <text x="96" y="1452" class="legendText">Legend: biru=command/control, hijau=status realtime/LWT, kuning=data access, biru putus-putus=jalur alternatif worker/cloud.</text>
+</svg>

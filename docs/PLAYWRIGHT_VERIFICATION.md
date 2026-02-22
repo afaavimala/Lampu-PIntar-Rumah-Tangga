@@ -4,6 +4,7 @@ Tanggal verifikasi:
 - 16 February 2026: local development.
 - 17 February 2026: local production single port + cloud single Worker.
 - 17 February 2026: audit console browser local production + cloud (error/warning check).
+- 21 February 2026: sinkronisasi dokumentasi + kompatibilitas MQTT Tasmota.
 
 ## Target Uji
 
@@ -33,6 +34,7 @@ Tanggal verifikasi:
 14. Local dev: setelah reload dashboard, SSE reconnect + resubscribe tetap menerima event LWT: `PASS`
 15. Audit console browser local production (`http://127.0.0.1:8787`): `PASS` (`Errors: 0`, `Warnings: 0`).
 16. Audit console browser cloud Worker (`https://smartlamp-backend.robert-rully.workers.dev`): `PASS` (`Errors: 0`, `Warnings: 0`).
+17. Dokumen visual di `docs/diagram` dapat diakses via static server: `PASS`.
 
 ## Tambahan Verifikasi API (Local, Non-Playwright)
 
@@ -49,6 +51,7 @@ Tanggal verifikasi:
 8. Verifikasi paralel 10 device (`scripts/verify-parallel-devices.sh`, cloud): `PASS` (`OK: 10`, `FAIL: 0`).
 9. Pengukuran latency command -> status ack (`scripts/measure-status-ack-latency.sh`, cloud simulasi status): `PASS` (tercatat nilai ms).
 10. Verifikasi keamanan command envelope (`scripts/verify-command-security.sh`): `PASS` (tampered/replay/expired ditolak).
+11. Verifikasi test kompatibilitas MQTT Tasmota (`npm --prefix backend test`): `PASS` (`mqtt-compat.test.ts`, `mqtt-command-publish.test.ts`).
 
 ## Evidence
 

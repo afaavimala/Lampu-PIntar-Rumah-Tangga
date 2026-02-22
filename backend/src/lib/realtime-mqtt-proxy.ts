@@ -1,5 +1,6 @@
-import { publishMqttOverWs } from './mqtt-ws'
+import { parseRealtimeMqttMessage, getRealtimeSubscribeTopics } from './mqtt-compat'
 import type { SignedCommandEnvelope } from './commands'
+import { publishCompatibleCommandOverWs } from './mqtt-command-publish'
 
 const CONNECT_PACKET_TYPE = 0x10
 const CONNACK_PACKET_TYPE = 0x20
@@ -26,6 +27,10 @@ type RealtimeEvent =
 type RealtimeSubscriber = {
   deviceIds: Set<string>
   onEvent: (event: RealtimeEvent) => void
+}
+
+type SubscribeOptions = {
+  replayLatest?: boolean
 }
 
 type RealtimeProxyConfig = {
@@ -223,11 +228,6 @@ function extractPublishPacket(packet: Uint8Array) {
   }
 }
 
-function extractDeviceId(topic: string) {
-  const parts = topic.split('/')
-  return parts.length >= 3 ? parts[1] : ''
-}
-
 export class RealtimeMqttProxy {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -238,6 +238,8 @@ export class RealtimeMqttProxy {
   private subscribers = new Map<number, RealtimeSubscriber>()
   private nextSubscriberId = 1
   private nextPacketIdValue = 1
+  private latestStatusByDevice = new Map<string, { payload: Record<string, unknown>; ts: number }>()
+  private latestLwtByDevice = new Map<string, { payload: string; ts: number }>()
 
   constructor(private readonly config: RealtimeProxyConfig) {}
 
@@ -271,14 +273,39 @@ export class RealtimeMqttProxy {
     }
   }
 
-  subscribe(deviceIds: string[], onEvent: (event: RealtimeEvent) => void) {
+  subscribe(deviceIds: string[], onEvent: (event: RealtimeEvent) => void, options?: SubscribeOptions) {
     const id = this.nextSubscriberId++
+    const trackedDeviceIds = new Set(deviceIds)
     this.subscribers.set(id, {
-      deviceIds: new Set(deviceIds),
+      deviceIds: trackedDeviceIds,
       onEvent,
     })
 
     this.ensureConnected()
+
+    if (options?.replayLatest ?? true) {
+      for (const deviceId of trackedDeviceIds) {
+        const latestStatus = this.latestStatusByDevice.get(deviceId)
+        if (latestStatus) {
+          onEvent({
+            type: 'status',
+            deviceId,
+            payload: latestStatus.payload,
+            ts: latestStatus.ts,
+          })
+        }
+
+        const latestLwt = this.latestLwtByDevice.get(deviceId)
+        if (latestLwt) {
+          onEvent({
+            type: 'lwt',
+            deviceId,
+            payload: latestLwt.payload,
+            ts: latestLwt.ts,
+          })
+        }
+      }
+    }
 
     return () => {
       this.subscribers.delete(id)
@@ -286,14 +313,12 @@ export class RealtimeMqttProxy {
   }
 
   async publishSignedCommand(envelope: SignedCommandEnvelope) {
-    await publishMqttOverWs({
+    await publishCompatibleCommandOverWs({
       url: this.config.url,
       username: this.config.username,
       password: this.config.password,
       clientIdPrefix: this.config.clientIdPrefix,
-      topic: `home/${envelope.deviceId}/cmd`,
-      payload: JSON.stringify(envelope),
-    })
+    }, envelope)
   }
 
   private ensureConnected() {
@@ -358,7 +383,7 @@ export class RealtimeMqttProxy {
             connAcked = true
             this.connected = true
             clearTimeout(connAckTimeout)
-            ws.send(buildSubscribePacket(this.nextPacketId(), ['home/+/status', 'home/+/lwt']))
+            ws.send(buildSubscribePacket(this.nextPacketId(), getRealtimeSubscribeTopics()))
             this.startPing(ws)
             continue
           }
@@ -376,37 +401,15 @@ export class RealtimeMqttProxy {
             continue
           }
 
-          const deviceId = extractDeviceId(decoded.topic)
-          if (!deviceId) {
+          const parsed = parseRealtimeMqttMessage(decoded.topic, decoded.payload)
+          if (!parsed || !parsed.deviceId) {
             continue
           }
 
-          if (decoded.topic.endsWith('/status')) {
-            let payload: Record<string, unknown> = { raw: decoded.payload }
-            try {
-              const parsed = JSON.parse(decoded.payload) as Record<string, unknown>
-              payload = parsed
-            } catch {
-              // keep raw
-            }
-
-            this.emitEvent({
-              type: 'status',
-              deviceId,
-              payload,
-              ts: Date.now(),
-            })
-            continue
-          }
-
-          if (decoded.topic.endsWith('/lwt')) {
-            this.emitEvent({
-              type: 'lwt',
-              deviceId,
-              payload: decoded.payload,
-              ts: Date.now(),
-            })
-          }
+          this.emitEvent({
+            ...parsed,
+            ts: Date.now(),
+          })
         }
       })()
     })
@@ -457,6 +460,18 @@ export class RealtimeMqttProxy {
   }
 
   private emitEvent(event: RealtimeEvent) {
+    if (event.type === 'status') {
+      this.latestStatusByDevice.set(event.deviceId, {
+        payload: event.payload,
+        ts: event.ts,
+      })
+    } else {
+      this.latestLwtByDevice.set(event.deviceId, {
+        payload: event.payload,
+        ts: event.ts,
+      })
+    }
+
     for (const subscriber of this.subscribers.values()) {
       if (!subscriber.deviceIds.has(event.deviceId)) {
         continue

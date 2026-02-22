@@ -9,8 +9,8 @@ import { beginIdempotentRequest, persistIdempotentResponse } from '../lib/idempo
 import { createSignedEnvelope, logCommandSignature } from '../lib/commands'
 import { resolveDeviceAccess } from '../lib/db'
 import { applyRateLimitHeaders, consumeRateLimit, getClientIp, readPositiveInt } from '../lib/rate-limit'
-import { publishMqttOverWs } from '../lib/mqtt-ws'
 import { getRealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
+import { publishCompatibleCommandOverWs } from '../lib/mqtt-command-publish'
 
 const commandSchema = z.object({
   deviceId: z.string().min(1),
@@ -159,14 +159,12 @@ commandRoutes.post('/execute', requireAuth(['command']), async (c) => {
     if (proxy) {
       await proxy.publishSignedCommand(context.envelope)
     } else {
-      await publishMqttOverWs({
+      await publishCompatibleCommandOverWs({
         url: c.env.MQTT_WS_URL,
         username: c.env.MQTT_USERNAME,
         password: c.env.MQTT_PASSWORD,
         clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
-        topic: `home/${context.envelope.deviceId}/cmd`,
-        payload: JSON.stringify(context.envelope),
-      })
+      }, context.envelope)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to publish command'

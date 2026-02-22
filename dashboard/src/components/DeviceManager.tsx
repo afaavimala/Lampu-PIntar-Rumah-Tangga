@@ -78,7 +78,9 @@ export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
           {submitting ? 'Menyimpan...' : 'Tambah Device'}
         </button>
       </form>
-      <p className="small">Topic command device otomatis: home/&lt;deviceId&gt;/cmd</p>
+      <p className="small">
+        Topic command kompatibel: home/&lt;deviceId&gt;/cmd dan Tasmota cmnd/&lt;deviceId&gt;/POWER
+      </p>
     </section>
   )
 }

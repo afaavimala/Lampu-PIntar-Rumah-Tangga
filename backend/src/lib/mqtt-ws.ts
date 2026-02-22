@@ -1,3 +1,5 @@
+import { buildLwtSnapshotSubscribeTopics, extractLwtDeviceIdFromTopic } from './mqtt-compat'
+
 const CONNECT_PACKET_TYPE = 0x10
 const CONNACK_PACKET_TYPE = 0x20
 const PUBLISH_PACKET_TYPE = 0x30
@@ -361,7 +363,9 @@ export async function readLwtSnapshotOverWs(input: {
   const snapshotWaitMs = input.snapshotWaitMs ?? 600
   const clientId = `${input.clientIdPrefix ?? 'smartlamp-lwt'}-${crypto.randomUUID().slice(0, 8)}`
   const ws = new WebSocket(input.url, ['mqtt'])
-  const expectedTopics = new Set(deviceIds.map((deviceId) => `home/${deviceId}/lwt`))
+  const subscribeTopics = buildLwtSnapshotSubscribeTopics(deviceIds)
+  const expectedTopics = new Set(subscribeTopics.map((topic) => topic.toLowerCase()))
+  const expectedDeviceIds = new Map(deviceIds.map((deviceId) => [deviceId.toLowerCase(), deviceId]))
   const result: Record<string, string> = {}
 
   const queue: Uint8Array[] = []
@@ -439,7 +443,7 @@ export async function readLwtSnapshotOverWs(input: {
     }
 
     const subscribePacketId = Math.max(1, Math.floor(Math.random() * 65535))
-    ws.send(buildSubscribePacket(subscribePacketId, deviceIds.map((deviceId) => `home/${deviceId}/lwt`)))
+    ws.send(buildSubscribePacket(subscribePacketId, subscribeTopics))
     await nextPacket(
       (packet) => packetType(packet) === SUBACK_PACKET_TYPE && readSubAckPacketId(packet) === subscribePacketId,
       timeoutMs,
@@ -464,18 +468,22 @@ export async function readLwtSnapshotOverWs(input: {
       }
 
       const decoded = extractPublishPacket(packet)
-      if (!decoded || !expectedTopics.has(decoded.topic)) {
+      if (!decoded || !expectedTopics.has(decoded.topic.toLowerCase())) {
         continue
       }
 
-      const parts = decoded.topic.split('/')
-      const deviceId = parts.length >= 3 ? parts[1] : ''
+      const deviceId = extractLwtDeviceIdFromTopic(decoded.topic)
       if (!deviceId) {
         continue
       }
 
-      result[deviceId] = decoded.payload
-      if (Object.keys(result).length >= expectedTopics.size) {
+      const canonicalDeviceId = expectedDeviceIds.get(deviceId.toLowerCase())
+      if (!canonicalDeviceId) {
+        continue
+      }
+
+      result[canonicalDeviceId] = decoded.payload
+      if (Object.keys(result).length >= expectedDeviceIds.size) {
         break
       }
     }

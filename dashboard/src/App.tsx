@@ -95,7 +95,7 @@ export default function App() {
           const previous = prev[deviceId] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: true,
+            online: false,
           }
 
           const nextPower = typeof payload.power === 'string' ? payload.power : previous.power
@@ -111,7 +111,7 @@ export default function App() {
             [deviceId]: {
               power: nextPower,
               updatedAt: nextTs,
-              online: true,
+              online: previous.online,
             },
           }
         })
@@ -250,11 +250,11 @@ export default function App() {
           ...(prev[lamp.device!.id] ?? {
             power: 'UNKNOWN',
             updatedAt: null,
-            online: true,
+            online: false,
           }),
           power: action,
           updatedAt: new Date().toISOString(),
-          online: true,
+          online: prev[lamp.device!.id]?.online ?? false,
         },
       }))
     } catch (error) {

@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth'
 import { fail } from '../lib/response'
 import { listBestStatus } from '../lib/status'
 import { listDevicesByPrincipal } from '../lib/db'
-import { getRealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
+import { RealtimeMqttProxy, getRealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
 import { readLwtSnapshotOverWs } from '../lib/mqtt-ws'
 
 export const realtimeRoutes = new Hono<AppEnv>()
@@ -40,88 +40,103 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
 
       const lastStatusMap = new Map<string, string>()
       const lastLwtMap = new Map<string, string>()
-      for (const status of initialStatuses) {
-        const signature = `${status.power}|${status.updatedAt ?? ''}|${status.source}`
-        lastStatusMap.set(status.deviceId, signature)
+
+      const statusSignature = (payload: Record<string, unknown>) => {
+        const power = typeof payload.power === 'string' ? payload.power : ''
+        const ts = typeof payload.ts === 'number' ? String(payload.ts) : ''
+        const updatedAt = typeof payload.updatedAt === 'string' ? payload.updatedAt : ''
+        const source = typeof payload.source === 'string' ? payload.source : ''
+        const reason = typeof payload.reason === 'string' ? payload.reason : ''
+        const requestId = typeof payload.requestId === 'string' ? payload.requestId : ''
+        return `${power}|${ts}|${updatedAt}|${source}|${reason}|${requestId}`
+      }
+
+      const emitStatus = (deviceId: string, payload: Record<string, unknown>, ts: number) => {
+        const signature = statusSignature(payload)
+        if (lastStatusMap.get(deviceId) === signature) {
+          return
+        }
+
+        lastStatusMap.set(deviceId, signature)
         send({
           type: 'status',
-          deviceId: status.deviceId,
-          payload: {
+          deviceId,
+          payload,
+          ts,
+        })
+      }
+
+      const emitLwt = (deviceId: string, payload: string, ts: number) => {
+        const normalized = payload.trim().toUpperCase()
+        if (!normalized) {
+          return
+        }
+        if (lastLwtMap.get(deviceId) === normalized) {
+          return
+        }
+
+        lastLwtMap.set(deviceId, normalized)
+        send({
+          type: 'lwt',
+          deviceId,
+          payload: normalized,
+          ts,
+        })
+      }
+
+      for (const status of initialStatuses) {
+        emitStatus(
+          status.deviceId,
+          {
             power: status.power,
             updatedAt: status.updatedAt,
             source: status.source,
           },
-          ts: Date.now(),
+          Date.now(),
+        )
+      }
+
+      let streamProxy = proxy
+      let ownedProxy: RealtimeMqttProxy | null = null
+      if (!streamProxy) {
+        ownedProxy = new RealtimeMqttProxy({
+          url: c.env.MQTT_WS_URL,
+          username: c.env.MQTT_USERNAME,
+          password: c.env.MQTT_PASSWORD,
+          clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
         })
+        ownedProxy.start()
+        streamProxy = ownedProxy
       }
 
       let unsubscribe = () => {}
-      let pollingTimer: ReturnType<typeof setInterval> | null = null
 
-      if (proxy) {
-        unsubscribe = proxy.subscribe(deviceIds, (event) => {
-          send(event)
-        })
-      } else {
-        const emitFallbackSnapshot = async () => {
-          const statuses = await listBestStatus(c.env.DB, principal)
-          for (const status of statuses) {
-            const signature = `${status.power}|${status.updatedAt ?? ''}|${status.source}`
-            if (lastStatusMap.get(status.deviceId) === signature) {
-              continue
-            }
-            lastStatusMap.set(status.deviceId, signature)
-            send({
-              type: 'status',
-              deviceId: status.deviceId,
-              payload: {
-                power: status.power,
-                updatedAt: status.updatedAt,
-                source: status.source,
-              },
-              ts: Date.now(),
-            })
-          }
-
-          try {
-            const lwtSnapshot = await readLwtSnapshotOverWs({
-              url: c.env.MQTT_WS_URL,
-              username: c.env.MQTT_USERNAME,
-              password: c.env.MQTT_PASSWORD,
-              clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
-              deviceIds,
-            })
-
-            for (const [deviceId, payload] of Object.entries(lwtSnapshot)) {
-              const normalized = payload.trim().toUpperCase()
-              if (lastLwtMap.get(deviceId) === normalized) {
-                continue
-              }
-              lastLwtMap.set(deviceId, normalized)
-              send({
-                type: 'lwt',
-                deviceId,
-                payload,
-                ts: Date.now(),
-              })
-            }
-          } catch {
-            // ignore mqtt snapshot error for stream stability
-          }
+      unsubscribe = streamProxy.subscribe(deviceIds, (event) => {
+        if (event.type === 'status') {
+          emitStatus(event.deviceId, event.payload, event.ts)
+          return
         }
 
-        void emitFallbackSnapshot().catch(() => {
-          // ignore first snapshot error for stream stability
-        })
+        emitLwt(event.deviceId, event.payload, event.ts)
+      })
 
-        pollingTimer = setInterval(() => {
-          void (async () => {
-            await emitFallbackSnapshot()
-          })().catch(() => {
-            // ignore polling error for stream stability
+      void (async () => {
+        try {
+          const lwtSnapshot = await readLwtSnapshotOverWs({
+            url: c.env.MQTT_WS_URL,
+            username: c.env.MQTT_USERNAME,
+            password: c.env.MQTT_PASSWORD,
+            clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
+            deviceIds,
           })
-        }, 4_000)
-      }
+
+          for (const [deviceId, payload] of Object.entries(lwtSnapshot)) {
+            emitLwt(deviceId, payload, Date.now())
+          }
+        } catch {
+          // ignore mqtt snapshot error for stream stability
+        }
+      })()
 
       const heartbeat = setInterval(() => {
         send({
@@ -136,10 +151,8 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
         }
         closed = true
         clearInterval(heartbeat)
-        if (pollingTimer) {
-          clearInterval(pollingTimer)
-        }
         unsubscribe()
+        ownedProxy?.stop()
         try {
           controller.close()
         } catch {

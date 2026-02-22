@@ -111,6 +111,9 @@ describe('scheduler runner dedup', () => {
       JWT_SECRET: 'jwt',
     } as any)
 
+    const publishMock = vi.mocked(publishMqttOverWs)
+    const publishCallsAfterFirst = publishMock.mock.calls.length
+
     const second = await runDueSchedules({
       DB: db as any,
       MQTT_WS_URL: 'wss://broker.example/mqtt',
@@ -121,9 +124,9 @@ describe('scheduler runner dedup', () => {
       JWT_SECRET: 'jwt',
     } as any)
 
-    const publishMock = vi.mocked(publishMqttOverWs)
     expect(first).toEqual({ processed: 1, failed: 0 })
     expect(second).toEqual({ processed: 0, failed: 0 })
-    expect(publishMock).toHaveBeenCalledTimes(1)
+    expect(publishCallsAfterFirst).toBeGreaterThan(0)
+    expect(publishMock).toHaveBeenCalledTimes(publishCallsAfterFirst)
   })
 })

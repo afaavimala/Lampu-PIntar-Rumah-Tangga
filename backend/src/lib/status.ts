@@ -25,7 +25,14 @@ export async function listBestStatus(db: D1Database, principal: Principal) {
 
 export async function getBestStatusForDevice(db: D1Database, internalId: number, publicId: string) {
   const latestCommand = await db
-    .prepare('SELECT action, created_at FROM command_logs WHERE device_id = ? ORDER BY id DESC LIMIT 1')
+    .prepare(
+      `SELECT action, created_at
+       FROM command_logs
+       WHERE device_id = ?
+         AND result IN ('PUBLISHED', 'SCHEDULED_SUCCESS')
+       ORDER BY id DESC
+       LIMIT 1`,
+    )
     .bind(internalId)
     .first<LogRow>()
 

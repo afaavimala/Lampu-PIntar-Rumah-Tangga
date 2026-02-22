@@ -1,0 +1,335 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4580" height="1840" viewBox="0 0 4580 1840">
+  <defs>
+    <pattern id="smallGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#1b3f67" stroke-width="0.9" opacity="0.42"/>
+    </pattern>
+    <pattern id="blueGrid" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="120" height="120" fill="url(#smallGrid)"/>
+      <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#2d5a8e" stroke-width="1.3" opacity="0.72"/>
+    </pattern>
+
+    <marker id="arrowMain" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ed0ff"/>
+    </marker>
+    <marker id="arrowStatus" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fe3c1"/>
+    </marker>
+    <marker id="arrowData" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffd89a"/>
+    </marker>
+
+    <style>
+      .title {
+        fill: #d9efff;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+      }
+      .subtitle {
+        fill: #9fc5e7;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 18px;
+      }
+      .zone {
+        fill: rgba(11, 35, 58, 0.54);
+        stroke: #3b6997;
+        stroke-width: 2;
+        stroke-dasharray: 10 7;
+      }
+      .zoneTitle {
+        fill: #a9d1f3;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+      }
+      .node {
+        fill: rgba(17, 42, 69, 0.88);
+        stroke: #a7d5ff;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeAlt {
+        fill: rgba(20, 48, 77, 0.88);
+        stroke: #8fe3c1;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeData {
+        fill: rgba(58, 46, 20, 0.76);
+        stroke: #ffd89a;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeEdge {
+        fill: rgba(68, 35, 36, 0.76);
+        stroke: #ffb5ba;
+        stroke-width: 2;
+        rx: 14;
+      }
+      .nodeTitle {
+        fill: #e6f5ff;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .nodeText {
+        fill: #b8d7f2;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 15px;
+      }
+      .nodeTextSmall {
+        fill: #b8d7f2;
+        font-family: 'Consolas', 'DejaVu Sans Mono', monospace;
+        font-size: 13px;
+      }
+      .mainLink {
+        fill: none;
+        stroke: #9ed0ff;
+        stroke-width: 2.7;
+        marker-end: url(#arrowMain);
+      }
+      .statusLink {
+        fill: none;
+        stroke: #8fe3c1;
+        stroke-width: 2.6;
+        marker-end: url(#arrowStatus);
+      }
+      .statusDashed {
+        fill: none;
+        stroke: #8fe3c1;
+        stroke-width: 2.4;
+        stroke-dasharray: 9 7;
+        marker-end: url(#arrowStatus);
+      }
+      .dataLink {
+        fill: none;
+        stroke: #ffd89a;
+        stroke-width: 2.3;
+        marker-end: url(#arrowData);
+      }
+      .altLink {
+        fill: none;
+        stroke: #7fa9d3;
+        stroke-width: 2.2;
+        stroke-dasharray: 8 6;
+        marker-end: url(#arrowMain);
+      }
+      .linkLabel {
+        fill: #ffffff;
+        font-family: 'Consolas', 'DejaVu Sans Mono', monospace;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.15px;
+        stroke: #0a2740;
+        stroke-width: 4.8;
+        paint-order: stroke fill;
+      }
+      .linkLabelDiag {
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .legendText {
+        fill: #b7d7f0;
+        font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+        font-size: 15px;
+      }
+    </style>
+  </defs>
+
+  <rect width="4580" height="1840" fill="#07192d"/>
+  <rect width="4580" height="1840" fill="url(#blueGrid)"/>
+  <rect x="24" y="24" width="4532" height="1792" fill="none" stroke="#3f6b96" stroke-width="2"/>
+
+  <text x="64" y="92" class="title">SMARTLAMP SYSTEM BLUEPRINT (PROJECT SPECIFIC)</text>
+  <text x="64" y="126" class="subtitle">Blueprint ini menggambarkan implementasi aktual repository: Hono API, MQTT compatibility (ESP32 + Tasmota), SSE realtime, scheduler, MariaDB/D1.</text>
+
+  <rect x="70" y="170" width="460" height="1110" class="zone"/>
+  <text x="96" y="204" class="zoneTitle">CLIENT ACCESS</text>
+
+  <rect x="680" y="170" width="980" height="560" class="zone"/>
+  <text x="706" y="204" class="zoneTitle">NODE RUNTIME (LOCAL / ON-PREM)</text>
+
+  <rect x="680" y="770" width="980" height="510" class="zone"/>
+  <text x="706" y="804" class="zoneTitle">CLOUDFLARE WORKER RUNTIME</text>
+
+  <rect x="1890" y="170" width="790" height="1110" class="zone"/>
+  <text x="1916" y="204" class="zoneTitle">MQTT + DATA SERVICES</text>
+
+  <rect x="3230" y="170" width="1240" height="1110" class="zone"/>
+  <text x="3256" y="204" class="zoneTitle">EDGE DEVICES</text>
+
+  <rect x="110" y="250" width="380" height="150" class="node"/>
+  <text x="140" y="290" class="nodeTitle">Dashboard Web</text>
+  <text x="140" y="318" class="nodeText">React + Vite + TS</text>
+  <text x="140" y="342" class="nodeText">JWT cookie + SSE client</text>
+  <text x="140" y="366" class="nodeText">/api/v1/* control UI</text>
+
+  <rect x="110" y="450" width="380" height="150" class="node"/>
+  <text x="140" y="490" class="nodeTitle">Integration Client</text>
+  <text x="140" y="518" class="nodeText">Bearer API key / JWT</text>
+  <text x="140" y="542" class="nodeText">Open integration endpoints</text>
+  <text x="140" y="566" class="nodeText">/devices, /schedules, /status</text>
+
+  <rect x="720" y="240" width="900" height="160" class="node"/>
+  <text x="750" y="280" class="nodeTitle">Hono API (Node)</text>
+  <text x="750" y="308" class="nodeText">Routes: auth, bootstrap, commands, schedules, realtime</text>
+  <text x="750" y="332" class="nodeText">Security: JWT, ACL device, idempotency, rate limit</text>
+  <text x="750" y="356" class="nodeText">Command signing: HMAC envelope (ESP32 profile)</text>
+
+  <rect x="720" y="430" width="900" height="140" class="nodeAlt"/>
+  <text x="750" y="470" class="nodeTitle">Realtime MQTT Proxy (Node)</text>
+  <text x="750" y="498" class="nodeText">Persistent MQTT over WSS subscribe</text>
+  <text x="750" y="522" class="nodeText">Emit SSE delta: status + lwt to dashboard</text>
+
+  <rect x="720" y="600" width="900" height="110" class="node"/>
+  <text x="750" y="640" class="nodeTitle">Scheduler Runner (Node)</text>
+  <text x="750" y="668" class="nodeText">runDueSchedules() + publishCompatibleCommandOverWs()</text>
+  <text x="750" y="692" class="nodeText">Command log + schedule_runs persisted</text>
+
+  <rect x="720" y="840" width="900" height="150" class="node"/>
+  <text x="750" y="880" class="nodeTitle">Hono API (Worker)</text>
+  <text x="750" y="908" class="nodeText">Same API contract /api/v1/* on Cloudflare</text>
+  <text x="750" y="932" class="nodeText">Single-origin app + API via ASSETS binding</text>
+
+  <rect x="720" y="1010" width="900" height="140" class="nodeAlt"/>
+  <text x="750" y="1050" class="nodeTitle">Worker Realtime Stream</text>
+  <text x="750" y="1078" class="nodeText">Per-connection MQTT subscribe + LWT snapshot over WSS</text>
+  <text x="750" y="1102" class="nodeText">Forward SSE to browser (frontend tetap tanpa kredensial broker)</text>
+
+  <rect x="720" y="1170" width="900" height="90" class="node"/>
+  <text x="750" y="1210" class="nodeTitle">Worker Cron Trigger</text>
+  <text x="750" y="1234" class="nodeText">scheduled() -> runDueSchedules()</text>
+
+  <rect x="1930" y="240" width="710" height="220" class="nodeData"/>
+  <text x="1960" y="280" class="nodeTitle">HiveMQ Broker</text>
+  <text x="1960" y="308" class="nodeText">ESP32/Tasmota: MQTT TLS tcp/8883</text>
+  <text x="1960" y="332" class="nodeText">Backend: MQTT over WSS :8884/mqtt (subprotocol mqtt)</text>
+  <text x="1960" y="356" class="nodeText">Command + status + lwt bus for all device profiles</text>
+  <text x="1960" y="380" class="nodeText">Retained status/lwt digunakan untuk snapshot + reconnect</text>
+
+  <rect x="1930" y="490" width="330" height="150" class="nodeData"/>
+  <text x="1960" y="530" class="nodeTitle">MariaDB</text>
+  <text x="1960" y="558" class="nodeText">Local SQL data</text>
+  <text x="1960" y="582" class="nodeText">auth/devices/logs</text>
+
+  <rect x="2310" y="490" width="330" height="150" class="nodeData"/>
+  <text x="2340" y="530" class="nodeTitle">D1</text>
+  <text x="2340" y="558" class="nodeText">Worker DB binding</text>
+  <text x="2340" y="582" class="nodeText">same schema intent</text>
+
+  <rect x="1930" y="670" width="710" height="570" class="nodeData"/>
+  <text x="1960" y="710" class="nodeTitle">MQTT Contract (Implemented)</text>
+  <text x="1960" y="738" class="nodeTextSmall">Publish command targets:</text>
+  <text x="1960" y="762" class="nodeTextSmall">- home/{deviceId}/cmd (native SmartLamp envelope)</text>
+  <text x="1960" y="786" class="nodeTextSmall">- cmnd/{deviceId}/POWER (Tasmota)</text>
+  <text x="1960" y="810" class="nodeTextSmall">- {deviceId}/cmnd/POWER (FullTopic variant)</text>
+  <text x="1960" y="846" class="nodeTextSmall">Subscribe realtime targets:</text>
+  <text x="1960" y="870" class="nodeTextSmall">- home/+/status, home/+/lwt</text>
+  <text x="1960" y="894" class="nodeTextSmall">- stat/+/POWER(1..8), stat/+/RESULT</text>
+  <text x="1960" y="918" class="nodeTextSmall">- tele/+/STATE, tele/+/LWT</text>
+  <text x="1960" y="942" class="nodeTextSmall">- +/stat/* and +/tele/* (FullTopic order)</text>
+  <text x="1960" y="978" class="nodeTextSmall">LWT snapshot helper:</text>
+  <text x="1960" y="1002" class="nodeTextSmall">- home/{deviceId}/lwt</text>
+  <text x="1960" y="1026" class="nodeTextSmall">- tele/{deviceId}/LWT and {deviceId}/tele/LWT</text>
+  <text x="1960" y="1060" class="nodeTextSmall">Source of truth: backend/src/lib/mqtt-compat.ts</text>
+
+  <rect x="3270" y="240" width="1160" height="230" class="nodeEdge"/>
+  <text x="3300" y="280" class="nodeTitle">ESP32 SmartLamp Firmware</text>
+  <text x="3300" y="308" class="nodeText">Subscribe native topic home/{deviceId}/cmd</text>
+  <text x="3300" y="332" class="nodeText">Verify HMAC sig + expiresAt + nonce (anti replay)</text>
+  <text x="3300" y="356" class="nodeText">Execute relay ON/OFF</text>
+  <text x="3300" y="380" class="nodeText">Publish home/{deviceId}/status + home/{deviceId}/lwt</text>
+  <text x="3300" y="404" class="nodeText">Clock sync via NTP for expiry validation</text>
+
+  <rect x="3270" y="500" width="1160" height="220" class="nodeEdge"/>
+  <text x="3300" y="540" class="nodeTitle">Tasmota Device</text>
+  <text x="3300" y="568" class="nodeText">Consume command POWER via cmnd topic</text>
+  <text x="3300" y="592" class="nodeText">Publish stat/{topic}/POWER|RESULT and tele/{topic}/STATE</text>
+  <text x="3300" y="616" class="nodeText">LWT on tele/{topic}/LWT (retained by broker)</text>
+  <text x="3300" y="640" class="nodeText">FullTopic pattern can swap order topic/prefix</text>
+  <text x="3300" y="664" class="nodeText">Backend parser normalizes ke status/lwt event umum</text>
+
+  <rect x="3270" y="760" width="520" height="150" class="nodeEdge"/>
+  <text x="3300" y="800" class="nodeTitle">Lamp Relay</text>
+  <text x="3300" y="828" class="nodeText">Physical ON/OFF state</text>
+  <text x="3300" y="852" class="nodeText">State mirrored to MQTT</text>
+
+  <rect x="3870" y="760" width="560" height="150" class="nodeEdge"/>
+  <text x="3900" y="800" class="nodeTitle">WiFi + NTP</text>
+  <text x="3900" y="828" class="nodeText">pool.ntp.org</text>
+  <text x="3900" y="852" class="nodeText">time.nist.gov</text>
+
+  <rect x="3270" y="950" width="1160" height="220" class="nodeEdge"/>
+  <text x="3300" y="990" class="nodeTitle">Realtime Feedback Loop</text>
+  <text x="3300" y="1018" class="nodeText">Device -> broker status/lwt -> backend SSE -> dashboard UI update</text>
+  <text x="3300" y="1042" class="nodeText">Node mode: persistent proxy subscribe</text>
+  <text x="3300" y="1066" class="nodeText">Worker mode: MQTT subscribe per stream + LWT snapshot bootstrap</text>
+
+  <path d="M 490 325 L 720 325" class="mainLink"/>
+  <text x="605" y="294" class="linkLabel linkLabelDiag">HTTPS REST</text>
+
+  <path d="M 490 385 L 720 900" class="altLink"/>
+  <text x="570" y="614" class="linkLabel linkLabelDiag">Worker API alt</text>
+
+  <path d="M 490 525 L 720 345" class="mainLink"/>
+  <text x="622" y="388" class="linkLabel linkLabelDiag">Bearer JWT</text>
+
+  <path d="M 490 565 L 720 905" class="altLink"/>
+  <text x="584" y="726" class="linkLabel linkLabelDiag">Integration Worker</text>
+
+  <path d="M 1620 325 L 1930 325" class="mainLink"/>
+  <text x="1775" y="294" class="linkLabel linkLabelDiag">MQTT cmd publish</text>
+
+  <path d="M 1620 500 L 1930 390" class="statusLink"/>
+  <text x="1774" y="404" class="linkLabel linkLabelDiag">MQTT realtime sub</text>
+
+  <path d="M 1620 655 L 1930 370" class="mainLink"/>
+  <text x="1772" y="474" class="linkLabel linkLabelDiag">MQTT schedule</text>
+
+  <path d="M 1620 365 L 1930 565" class="dataLink"/>
+  <text x="1788" y="430" class="linkLabel linkLabelDiag">SQL MariaDB</text>
+
+  <path d="M 1620 915 L 2310 565" class="dataLink"/>
+  <text x="1968" y="700" class="linkLabel linkLabelDiag">D1 binding</text>
+
+  <path d="M 1620 1080 L 1930 430" class="statusDashed"/>
+  <text x="1766" y="724" class="linkLabel linkLabelDiag">LWT snapshot</text>
+
+  <path d="M 2640 355 L 3270 355" class="mainLink"/>
+  <text x="2958" y="324" class="linkLabel linkLabelDiag">ESP32 cmd</text>
+
+  <path d="M 2640 405 L 3270 615" class="mainLink"/>
+  <text x="2962" y="468" class="linkLabel linkLabelDiag">Tasmota POWER cmd</text>
+
+  <path d="M 3270 430 L 2640 430" class="statusLink"/>
+  <text x="2958" y="399" class="linkLabel linkLabelDiag">ESP32 status/lwt</text>
+
+  <path d="M 3270 675 L 2640 500" class="statusLink"/>
+  <text x="2960" y="544" class="linkLabel linkLabelDiag">Tasmota stat/tele</text>
+
+  <path d="M 3790 835 L 3870 835" class="mainLink"/>
+  <text x="3830" y="804" class="linkLabel linkLabelDiag">NTP network</text>
+
+  <path d="M 720 500 L 490 350" class="statusLink"/>
+  <text x="620" y="386" class="linkLabel linkLabelDiag">SSE status/lwt</text>
+
+  <path d="M 720 1080 L 490 380" class="statusDashed"/>
+  <text x="588" y="700" class="linkLabel linkLabelDiag">Worker SSE stream</text>
+
+  <rect x="70" y="1320" width="4430" height="300" class="node"/>
+  <text x="96" y="1364" class="nodeTitle">Command + Feedback Flow (Actual Implementation)</text>
+  <text x="96" y="1392" class="nodeTextSmall">1) Dashboard POST /api/v1/commands/execute -> 2) Hono validates ACL + signs envelope -> 3) Publish ke home/cmd + cmnd/POWER + {deviceId}/cmnd/POWER</text>
+  <text x="96" y="1418" class="nodeTextSmall">4) Device executes (ESP32 verify HMAC, Tasmota execute POWER) -> 5) Device publish status/lwt ke broker (home atau stat/tele)</text>
+  <text x="96" y="1444" class="nodeTextSmall">6) Backend realtime path ingest event MQTT -> emit SSE status/lwt -> dashboard auto update (Node proxy / Worker per-stream subscribe).</text>
+  <text x="96" y="1476" class="legendText">Legend:</text>
+  <line x1="172" y1="1472" x2="242" y2="1472" class="mainLink"/>
+  <text x="254" y="1476" class="legendText">Command/control flow</text>
+  <line x1="488" y1="1472" x2="558" y2="1472" class="statusLink"/>
+  <text x="570" y="1476" class="legendText">Realtime status/lwt flow</text>
+  <line x1="974" y1="1472" x2="1044" y2="1472" class="dataLink"/>
+  <text x="1056" y="1476" class="legendText">Database/data access flow</text>
+  <line x1="1468" y1="1472" x2="1538" y2="1472" class="altLink"/>
+  <text x="1550" y="1476" class="legendText">Worker alternative path</text>
+</svg>

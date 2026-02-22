@@ -41,7 +41,15 @@ backend/    # Hono API (Node + Worker), migrasi MariaDB & D1
 dashboard/  # Vite React dashboard + realtime SSE client
 scripts/    # script setup/build/deploy lokal + cloud
 firmware/   # referensi firmware ESP32 SmartLamp (MQTT TLS + HMAC verify + LWT)
+docs/       # diagram arsitektur, dokumentasi utama, hasil verifikasi
 ```
+
+## Dokumentasi
+
+- `docs/Dokumentasi_Utama_SmartLamp_IoT.md`
+- `docs/Diagram_Arsitektur_Ekosistem_SmartLamp.md`
+- `docs/PLAYWRIGHT_VERIFICATION.md`
+- `docs/diagram/README.md`
 
 ## Prasyarat
 

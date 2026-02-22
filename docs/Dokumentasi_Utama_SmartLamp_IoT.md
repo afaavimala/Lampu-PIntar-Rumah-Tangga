@@ -1,8 +1,8 @@
 # ARSITEKTUR SISTEM IOT LAMPU PINTAR RUMAH TANGGA
 
-## ESP32 + HiveMQ + Node.js + Hono + Vite + MariaDB (Hybrid, Multi-Device)
+## ESP32/Tasmota + HiveMQ + Node.js + Hono + Vite + MariaDB (Hybrid, Multi-Device)
 
-Tanggal Dokumen: 17 February 2026
+Tanggal Dokumen: 21 February 2026
 
 ---
 
@@ -28,7 +28,8 @@ Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan
 - `Hono App + Node.js`: login JWT, authorisasi device, execute command (sign + publish), audit log, scheduler runner, dan realtime proxy MQTT -> SSE.
 - `MariaDB`: users, devices, relasi user-device, dan command logs.
 - `HiveMQ Broker`: bus pesan realtime MQTT.
-- `ESP32 + Relay`: subscribe command, verifikasi signature, eksekusi ON/OFF, publish status.
+- `ESP32 + Relay`: subscribe command native, verifikasi signature, eksekusi ON/OFF, publish status.
+- `Tasmota Device`: menerima command `POWER`, publish status/LWT via topic `stat/tele`.
 
 ## 2.1 Standar Framework (Wajib)
 
@@ -71,13 +72,13 @@ Backend Node.js (Hono)
 ## 3.2 Data Plane (MQTT Realtime)
 
 ```text
-ESP32 -- MQTT TLS ----\
-                        > HiveMQ Broker
-Backend -- MQTT WSS ---/
+ESP32/Tasmota -- MQTT ----\
+                           > HiveMQ Broker
+Backend ------- MQTT WSS --/
 
-Backend subscribe status/lwt dan mem-forward ke SSE dashboard
-Backend publish command envelope signed ke topic cmd
-ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
+Backend subscribe status/lwt dari profile native (`home/*`) dan Tasmota (`stat/*`, `tele/*`) lalu mem-forward ke SSE dashboard.
+Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER`.
+ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay; Tasmota mengeksekusi command `POWER` sesuai konfigurasinya.
 ```
 
 ---
@@ -110,16 +111,16 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 1. User klik ON/OFF pada device tertentu.
 2. Dashboard request `POST /api/v1/commands/execute` ke backend.
 3. Backend validasi JWT + akses device, lalu menandatangani command envelope (HMAC).
-4. Backend publish envelope ke topic `home/{deviceId}/cmd`.
+4. Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
 5. Backend simpan audit command ke MariaDB.
-6. ESP32 verifikasi `sig`, `expiresAt`, dan `nonce`.
-7. Jika valid, ESP32 kontrol relay dan publish status terbaru.
+6. Untuk profile ESP32: device verifikasi `sig`, `expiresAt`, dan `nonce`.
+7. Device menjalankan ON/OFF lalu publish status terbaru (native atau Tasmota).
 
 ## 4.5 Realtime Status
 
-1. ESP32 publish status ke `home/{deviceId}/status`.
-2. ESP32 publish LWT online/offline ke `home/{deviceId}/lwt`.
-3. Backend menerima event MQTT dan stream ke dashboard via SSE.
+1. Device publish status ke broker: native `home/{deviceId}/status` atau Tasmota `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE`.
+2. Device publish LWT: native `home/{deviceId}/lwt` atau Tasmota `tele/{topic}/LWT`.
+3. Backend subscribe event dari broker MQTT lalu stream ke dashboard via SSE.
 4. `GET /api/v1/status` dipakai sebagai fallback non-realtime (opsional).
 
 ## 4.6 Penjadwalan Otomatis (Scheduler)
@@ -129,7 +130,7 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 3. Backend simpan rule jadwal ke MariaDB dan hitung `next_run_at`.
 4. Scheduler process di backend berjalan periodik (misalnya per menit) untuk mengambil jadwal jatuh tempo.
 5. Untuk setiap jadwal due, backend membuat signed command envelope (HMAC) seperti command manual.
-6. Backend publish command schedule ke broker (MQTT over WSS) ke topic `home/{deviceId}/cmd`.
+6. Backend publish command schedule ke broker (MQTT over WSS) ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
 7. ESP32 verifikasi signature, expiry, nonce, lalu eksekusi relay.
 8. Backend simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
 
@@ -139,15 +140,27 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay
 
 ## 5.1 Topic Naming
 
+SmartLamp profile (native):
 - Command: `home/{deviceId}/cmd`
 - Status: `home/{deviceId}/status`
 - LWT: `home/{deviceId}/lwt`
+
+Tasmota profile (kompatibel):
+- Command: `cmnd/{deviceId}/POWER` atau `{deviceId}/cmnd/POWER` (variasi FullTopic).
+- Status: `stat/{deviceId}/POWER` s.d. `POWER8`, `stat/{deviceId}/RESULT`, `tele/{deviceId}/STATE`.
+- LWT: `tele/{deviceId}/LWT` atau `{deviceId}/tele/LWT`.
+
+Catatan kompatibilitas Tasmota:
+- Direkomendasikan Prefix default Tasmota: `cmnd`, `stat`, `tele`.
+- FullTopic yang didukung backend: `%prefix%/%topic%/` dan `%topic%/%prefix%/`.
 
 ## 5.2 QoS dan Retain
 
 - `cmd`: QoS 1, retain = false
 - `status`: QoS 1, retain = true
 - `lwt`: QoS 1, retain = true
+
+Untuk Tasmota, QoS/retain mengikuti konfigurasi perangkat; backend kompatibel dengan payload `ON/OFF` command dan event `POWER/RESULT/STATE/LWT`.
 
 ## 5.3 Payload Kontrak
 
@@ -417,7 +430,7 @@ ESP32 wajib reject command jika:
 - Backend proxy realtime (Node runtime) wajib reconnect ke MQTT broker jika koneksi terputus.
 - Sinkron state awal dilakukan dari snapshot status DB saat stream dibuka.
 - Device offline dideteksi dari event LWT yang diteruskan backend.
-- Pada runtime Worker, realtime stream memakai fallback polling status DB + snapshot LWT retained via MQTT over WSS.
+- Pada runtime Worker, realtime stream subscribe MQTT langsung per koneksi SSE + snapshot LWT retained via MQTT over WSS.
 - Scheduler runner harus idempotent (mencegah eksekusi ganda pada menit yang sama).
 - Perhitungan jadwal harus berbasis timezone IANA untuk menangani DST secara konsisten.
 
@@ -475,7 +488,7 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 - Multi-device berfungsi dengan topic pattern dinamis.
 - Realtime update dashboard berjalan via SSE backend proxy.
 - Backend realtime proxy MQTT stabil pada Node runtime.
-- Runtime Worker tetap berfungsi dengan fallback polling status + snapshot LWT.
+- Runtime Worker tetap berfungsi dengan subscribe MQTT realtime + snapshot LWT.
 - Command tanpa signature ditolak di firmware.
 - Audit command tersimpan di MariaDB.
 - Scheduler otomatis ON/OFF berjalan stabil berbasis cron + timezone.
@@ -504,7 +517,7 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 ## 13.2 PHASE 2 - Firmware ESP32
 
 - [x] Implement MQTT TLS connect + reconnect.
-- [x] Subscribe `home/{deviceId}/cmd`.
+- [x] Subscribe `home/{deviceId}/cmd` (profile native ESP32).
 - [x] Implement verifikasi signature HMAC command.
 - [x] Implement validasi expiry + nonce anti-replay.
 - [x] Publish `status` retained setelah setiap perubahan state.
@@ -544,7 +557,7 @@ Catatan:
 - [x] Implement scheduler runner pada process backend (interval periodik).
 - [x] Implement kalkulasi `next_run_at` (cron + timezone IANA).
 - [x] Implement log eksekusi jadwal ke `schedule_runs`.
-- [x] Implement publish command schedule ke topic `home/{deviceId}/cmd`.
+- [x] Implement publish command schedule ke topic kompatibel `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER`.
 - [x] Implement middleware response envelope standar (`success/data/error/meta`).
 - [x] Implement API key auth + scope check untuk akses integrasi.
 - [x] Implement idempotency middleware untuk endpoint mutasi.
@@ -598,7 +611,7 @@ Catatan:
 - [x] Simpan evidence Playwright MCP (screenshot dan catatan pass/fail per skenario).
 
 Catatan verifikasi terakhir:
-- Tanggal: 17 February 2026 (local + cloud).
+- Tanggal: 21 February 2026 (local + cloud + sinkronisasi kompatibilitas Tasmota).
 - Tool: Playwright MCP.
 - Evidence screenshot local: tersimpan pada output sesi Playwright MCP runner (artefak sesi, tidak disimpan permanen di root repo).
 - Verifikasi tambahan API local: API key scope, idempotency replay/mismatch, rate-limit auth/command, dan refresh token rotation (lihat `PLAYWRIGHT_VERIFICATION.md`).
@@ -608,6 +621,10 @@ Catatan verifikasi terakhir:
   - `backend/test/schedules.test.ts`: validasi DST timezone.
   - `backend/test/scheduler-runner.test.ts`: dedup schedule slot mencegah publish ganda.
   - `backend/test/authz.test.ts`: JWT expired -> `AUTH_EXPIRED_TOKEN`, dan user tanpa akses device -> `FORBIDDEN_DEVICE_ACCESS`.
+- Verifikasi kompatibilitas MQTT Tasmota (21 February 2026):
+  - `backend/test/mqtt-compat.test.ts`: parser/pemetaan topic `stat|tele` + variasi FullTopic.
+  - `backend/test/mqtt-command-publish.test.ts`: publish command multi-profile (`home`, `cmnd`, `{deviceId}/cmnd`).
+  - `npm --prefix backend test`: semua test lulus.
 - Verifikasi Playwright + MQTT (17 February 2026, local dev):
   - Publish `home/lampu-ruang-tamu/lwt = OFFLINE/ONLINE` memicu update badge device realtime.
   - Setelah reload dashboard, stream SSE kembali aktif dan event LWT tetap diterima (resubscribe + state sinkron).
@@ -658,13 +675,13 @@ Ringkasan teknis:
 Implikasi arsitektur:
 - `Browser dashboard -> Backend SSE` dipakai untuk realtime dashboard.
 - `Backend Node.js -> HiveMQ (WSS)` dipakai untuk proxy status/lwt dan publish command.
-- `Cloudflare Worker -> HiveMQ (WSS)` dipakai untuk publish command dan snapshot LWT retained (tanpa long-lived subscribe).
+- `Cloudflare Worker -> HiveMQ (WSS)` dipakai untuk publish command, subscribe status/lwt per stream SSE, dan snapshot LWT retained.
 
 Guardrails implementasi:
 - Gunakan endpoint `wss://` resmi dari HiveMQ cluster.
 - Gunakan subprotocol MQTT yang sesuai (`mqtt`/`mqttv3.1`) bila diperlukan listener broker.
 - Node runtime boleh memakai long-lived MQTT subscribe untuk proxy realtime.
-- Runtime Worker tetap gunakan model non long-lived (publish per request + SSE fallback polling DB + snapshot LWT retained).
+- Runtime Worker gunakan subscribe MQTT per koneksi SSE (tanpa proxy global process-wide) + snapshot LWT retained.
 
 ---
 
@@ -672,8 +689,8 @@ Guardrails implementasi:
 
 ## 16.1 Login Page
 
-![Contoh Login Page](contoh-login-page.png)
+![Contoh Login Page](../contoh-login-page.png)
 
 ## 16.2 Dashboard
 
-![Contoh Dashboard](contoh-dashboard.png)
+![Contoh Dashboard](../contoh-dashboard.png)
