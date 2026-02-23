@@ -142,13 +142,19 @@ integrationRoutes.get('/devices/discovery', requireAuth(['read']), async (c) => 
     return fail(c, 'INTERNAL_ERROR', message, 502)
   }
 
-  const [ownedDevices, allRegistered] = await Promise.all([
+  const [ownedDevices, activelyClaimedDevices] = await Promise.all([
     listDevicesByPrincipal(c.env.DB, principal),
-    c.env.DB.prepare('SELECT device_id FROM devices').all<{ device_id: string }>(),
+    c.env.DB
+      .prepare(
+        `SELECT DISTINCT d.device_id
+         FROM devices d
+         INNER JOIN user_devices ud ON ud.device_id = d.id`,
+      )
+      .all<{ device_id: string }>(),
   ])
 
   const ownedDeviceIds = new Set(ownedDevices.map((device) => device.device_id.toLowerCase()))
-  const registeredDeviceIds = new Set(allRegistered.results.map((row) => row.device_id.toLowerCase()))
+  const registeredDeviceIds = new Set(activelyClaimedDevices.results.map((row) => row.device_id.toLowerCase()))
 
   const devices = discovered.map((item) => {
     const key = item.deviceId.toLowerCase()

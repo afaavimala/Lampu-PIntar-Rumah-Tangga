@@ -544,7 +544,7 @@ export default function App() {
     setDiscovering(true)
     try {
       const result = await discoverDevices({
-        waitMs: 1_200,
+        waitMs: 2_000,
         maxDevices: 200,
       })
       setDiscoveredDevices(syncDiscoveredDevicesWithOwned(result.devices, devices))
