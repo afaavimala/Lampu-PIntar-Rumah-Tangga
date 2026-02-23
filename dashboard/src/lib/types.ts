@@ -21,8 +21,38 @@ export type Device = {
   location: string | null
 }
 
+export type DiscoveredDevice = {
+  deviceId: string
+  online: boolean | null
+  power: 'ON' | 'OFF' | 'UNKNOWN'
+  sources: string[]
+  lastSeenAt: string
+  suggestedName: string
+  alreadyLinked: boolean
+  alreadyRegistered: boolean
+}
+
+export type DiscoveryResult = {
+  scannedAt: string
+  waitMs: number
+  maxDevices: number
+  devices: DiscoveredDevice[]
+}
+
 export type BootstrapResponse = {
   devices: Device[]
+  viewer:
+    | {
+        kind: 'user'
+        id: number
+        email: string
+      }
+    | {
+        kind: 'client'
+        id: number
+        name: string
+      }
+    | null
   realtime:
     | {
         mode: 'proxy_sse'
@@ -31,14 +61,10 @@ export type BootstrapResponse = {
     | null
 }
 
-export type CommandEnvelope = {
+export type CommandDispatch = {
   deviceId: string
   action: CommandAction
   requestId: string
-  issuedAt: number
-  expiresAt: number
-  nonce: string
-  sig: string
 }
 
 export type DeviceStatus = {
@@ -60,6 +86,10 @@ export type ScheduleRule = {
   lastRunAt: number | null
   startAt: number | null
   endAt: number | null
+  windowGroupId: string | null
+  windowStartMinute: number | null
+  windowEndMinute: number | null
+  enforceEveryMinute: number | null
   createdAt: string
   updatedAt: string
 }

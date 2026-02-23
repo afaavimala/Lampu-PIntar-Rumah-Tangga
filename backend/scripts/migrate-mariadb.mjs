@@ -102,6 +102,62 @@ async function applyMigrations(conn) {
   }
 }
 
+async function hasColumn(conn, tableName, columnName) {
+  const rows = await conn.query(
+    `SELECT 1
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1`,
+    [tableName, columnName],
+  )
+  return rows.length > 0
+}
+
+async function ensureColumn(conn, tableName, columnName, definitionSql) {
+  if (await hasColumn(conn, tableName, columnName)) {
+    return
+  }
+
+  const escapedTable = quoteIdentifier(tableName)
+  const escapedColumn = quoteIdentifier(columnName)
+  await conn.query(`ALTER TABLE ${escapedTable} ADD COLUMN ${escapedColumn} ${definitionSql}`)
+  console.log(`[migrate] Added ${tableName}.${columnName}`)
+}
+
+async function hasIndex(conn, tableName, indexName) {
+  const rows = await conn.query(
+    `SELECT 1
+       FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND INDEX_NAME = ?
+      LIMIT 1`,
+    [tableName, indexName],
+  )
+  return rows.length > 0
+}
+
+async function ensureIndex(conn, tableName, indexName, indexExpressionSql) {
+  if (await hasIndex(conn, tableName, indexName)) {
+    return
+  }
+
+  const escapedTable = quoteIdentifier(tableName)
+  const escapedIndex = quoteIdentifier(indexName)
+  await conn.query(`CREATE INDEX ${escapedIndex} ON ${escapedTable} ${indexExpressionSql}`)
+  console.log(`[migrate] Added index ${tableName}.${indexName}`)
+}
+
+async function ensureSchemaCompatibility(conn) {
+  await ensureColumn(conn, 'device_schedules', 'window_group_id', 'VARCHAR(191) NULL')
+  await ensureColumn(conn, 'device_schedules', 'window_start_minute', 'INT NULL')
+  await ensureColumn(conn, 'device_schedules', 'window_end_minute', 'INT NULL')
+  await ensureColumn(conn, 'device_schedules', 'enforce_every_minute', 'INT NULL')
+  await ensureIndex(conn, 'device_schedules', 'idx_device_schedules_window_group', '(window_group_id)')
+}
+
 async function seedDefaults(conn) {
   const nowIso = new Date().toISOString()
   const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim() || 'admin@example.com'
@@ -109,9 +165,7 @@ async function seedDefaults(conn) {
   const sampleDeviceId = process.env.SEED_SAMPLE_DEVICE_ID?.trim() || 'lampu-ruang-tamu'
   const sampleDeviceName = process.env.SEED_SAMPLE_DEVICE_NAME?.trim() || 'Lampu Ruang Tamu'
   const sampleDeviceLocation = process.env.SEED_SAMPLE_DEVICE_LOCATION?.trim() || 'Ruang Tamu'
-  const sampleDeviceHmac =
-    process.env.SEED_SAMPLE_DEVICE_HMAC_SECRET?.trim() ||
-    'f43a301812844e47ab5908ebae902934fd3555cdc53f0da63df6fcb8a35bf98f'
+  const legacySecretPlaceholder = 'unused-tasmota'
   const demoApiKey = process.env.SEED_DEMO_API_KEY?.trim() || 'demo-integration-key'
   const demoApiHash = createHash('sha256').update(demoApiKey).digest('hex')
   const passwordHash = await bcrypt.hash(adminPassword, 12)
@@ -130,7 +184,7 @@ async function seedDefaults(conn) {
        name = VALUES(name),
        location = VALUES(location),
        hmac_secret = VALUES(hmac_secret)`,
-    [sampleDeviceId, sampleDeviceName, sampleDeviceLocation, sampleDeviceHmac, nowIso],
+    [sampleDeviceId, sampleDeviceName, sampleDeviceLocation, legacySecretPlaceholder, nowIso],
   )
 
   const userRow = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [adminEmail])
@@ -192,6 +246,7 @@ async function main() {
     const conn = await pool.getConnection()
     try {
       await applyMigrations(conn)
+      await ensureSchemaCompatibility(conn)
       await seedDefaults(conn)
     } finally {
       conn.release()

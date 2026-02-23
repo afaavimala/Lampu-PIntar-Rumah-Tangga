@@ -1293,8 +1293,8 @@
             <p>Aliran status satu arah dari backend ke browser setelah backend menerima event dari broker MQTT.</p>
           </article>
           <article class="term-card" data-logo="backend">
-            <h3>HMAC + Nonce</h3>
-            <p>Cap keamanan + nomor unik agar perintah palsu/ulang ditolak device.</p>
+            <h3>ACL + Idempotency</h3>
+            <p>Perintah dipublish oleh backend setelah validasi akses device dan kontrol replay request API.</p>
           </article>
         </section>
       </header>
@@ -1321,7 +1321,7 @@
 
                 <article class="node control" data-logo="backend">
                   <h3>2. Hono API (Node.js)</h3>
-                  <p>Validasi akses + HMAC, kirim command.</p>
+                  <p>Validasi akses + publish command.</p>
                 </article>
                 <div class="connector c-command"><span class="tag">MQTT WSS</span><span class="packet"></span></div>
 
@@ -1404,7 +1404,7 @@
 
                 <article class="node cloud" data-logo="cloudflare">
                   <h3>2. Hono API (Cloudflare Worker)</h3>
-                  <p>Validasi akses + HMAC, kirim command.</p>
+                  <p>Validasi akses + publish command.</p>
                 </article>
                 <div class="connector c-cloud"><span class="tag">MQTT WSS</span><span class="packet"></span></div>
 
@@ -1558,16 +1558,16 @@
           <p>Browser mengirim request API ke backend dengan session login.</p>
         </article>
         <article class="step" data-logo="backend">
-          <h3>2. Runtime backend validasi + tanda tangan command</h3>
-          <p>Node.js lokal atau Cloudflare Worker (mode cloud) cek akses device, memberi cap keamanan HMAC, lalu publish command ke HiveMQ.</p>
+          <h3>2. Runtime backend validasi + publish command</h3>
+          <p>Node.js lokal atau Cloudflare Worker (mode cloud) cek akses device, lalu publish command ke HiveMQ.</p>
         </article>
         <article class="step" data-logo="broker">
           <h3>3. HiveMQ kirim command ke ESP32/Tasmota</h3>
           <p>Device menerima payload pada topic command sesuai device ID/topic profile.</p>
         </article>
         <article class="step" data-logo="esp32" data-logo-secondary="arduino">
-          <h3>4. ESP32 verifikasi keamanan</h3>
-          <p>Device memeriksa signature, masa berlaku command, dan nonce agar replay tidak bisa dijalankan ulang.</p>
+          <h3>4. Device eksekusi command</h3>
+          <p>ESP32/Tasmota menjalankan POWER sesuai payload yang diterima.</p>
         </article>
         <article class="step" data-logo="lamp">
           <h3>5. Relay lampu dieksekusi</h3>

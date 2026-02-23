@@ -1,59 +1,33 @@
 import type { CommandAction } from '../types/app'
-import { buildCommandSigningPayload, hmacSha256Hex } from './crypto'
 
-export type SignedCommandEnvelope = {
+export type CommandDispatchEnvelope = {
   deviceId: string
   action: CommandAction
   requestId: string
-  issuedAt: number
-  expiresAt: number
-  nonce: string
-  sig: string
 }
 
-export async function createSignedEnvelope(input: {
+export function createCommandEnvelope(input: {
   deviceId: string
   action: CommandAction
   requestId: string
-  hmacSecret: string
-  ttlMs?: number
-}): Promise<SignedCommandEnvelope> {
-  const issuedAt = Date.now()
-  const expiresAt = issuedAt + (input.ttlMs ?? 30_000)
-  const nonce = crypto.randomUUID()
-
-  const payload = buildCommandSigningPayload({
-    deviceId: input.deviceId,
-    action: input.action,
-    requestId: input.requestId,
-    issuedAt,
-    expiresAt,
-    nonce,
-  })
-
-  const sig = await hmacSha256Hex(input.hmacSecret, payload)
-
+}): CommandDispatchEnvelope {
   return {
-    deviceId: input.deviceId,
+    deviceId: input.deviceId.trim(),
     action: input.action,
     requestId: input.requestId,
-    issuedAt,
-    expiresAt,
-    nonce,
-    sig,
   }
 }
 
-export async function logCommandSignature(params: {
+export async function logCommandDispatch(params: {
   db: D1Database
   userId: number | null
   deviceInternalId: number
   requestId: string
   action: CommandAction
-  issuedAt: number
-  expiresAt: number
   result: string
 }) {
+  const now = Date.now()
+
   await params.db
     .prepare(
       `INSERT INTO command_logs
@@ -65,8 +39,8 @@ export async function logCommandSignature(params: {
       params.userId,
       params.deviceInternalId,
       params.action,
-      params.issuedAt,
-      params.expiresAt,
+      now,
+      now,
       params.result,
       new Date().toISOString(),
     )

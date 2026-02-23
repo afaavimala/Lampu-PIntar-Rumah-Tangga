@@ -1,20 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildCommandSigningPayload, hmacSha256Hex } from '../src/lib/crypto'
+import { sha256Hex } from '../src/lib/crypto'
 
-describe('command signing', () => {
-  it('builds deterministic payload and signature', async () => {
-    const payload = buildCommandSigningPayload({
-      deviceId: 'lampu-1',
-      action: 'ON',
-      requestId: 'req-1',
-      issuedAt: 1000,
-      expiresAt: 2000,
-      nonce: 'nonce-1',
-    })
-
-    expect(payload).toBe('lampu-1|ON|req-1|1000|2000|nonce-1')
-
-    const sig = await hmacSha256Hex('secret', payload)
-    expect(sig).toHaveLength(64)
+describe('crypto utility', () => {
+  it('generates deterministic SHA-256 hash', async () => {
+    const digest = await sha256Hex('smartlamp')
+    expect(digest).toBe('1abf8ac5fe4d449a2dbe858d6b9654c827e2353a35515569d9b2041097810235')
   })
 })

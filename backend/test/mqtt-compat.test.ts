@@ -2,48 +2,27 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCommandPublishTargets,
   buildLwtSnapshotSubscribeTopics,
+  extractTasmotaDeviceIdFromTopic,
   extractLwtDeviceIdFromTopic,
+  getTasmotaDiscoverySubscribeTopics,
   getRealtimeSubscribeTopics,
+  normalizeTasmotaSwitchValue,
+  parseTasmotaPowerPayload,
   parseRealtimeMqttMessage,
 } from '../src/lib/mqtt-compat'
 
 describe('mqtt compatibility helpers', () => {
-  it('builds command topics for smartlamp and tasmota profiles', () => {
+  it('builds command topics for tasmota profiles', () => {
     const targets = buildCommandPublishTargets({
       deviceId: 'lampu-teras',
       action: 'ON',
-      envelopeJson: '{"deviceId":"lampu-teras"}',
     })
 
     expect(targets.map((target) => target.topic)).toEqual([
-      'home/lampu-teras/cmd',
       'cmnd/lampu-teras/POWER',
       'lampu-teras/cmnd/POWER',
     ])
-    expect(targets.map((target) => target.payload)).toEqual([
-      '{"deviceId":"lampu-teras"}',
-      'ON',
-      'ON',
-    ])
-  })
-
-  it('parses smartlamp status and lwt topics', () => {
-    const status = parseRealtimeMqttMessage(
-      'home/lampu-ruang-tamu/status',
-      '{"power":"ON","ts":1700000000000}',
-    )
-    const lwt = parseRealtimeMqttMessage('home/lampu-ruang-tamu/lwt', 'offline')
-
-    expect(status).toEqual({
-      type: 'status',
-      deviceId: 'lampu-ruang-tamu',
-      payload: { power: 'ON', ts: 1700000000000 },
-    })
-    expect(lwt).toEqual({
-      type: 'lwt',
-      deviceId: 'lampu-ruang-tamu',
-      payload: 'OFFLINE',
-    })
+    expect(targets.map((target) => target.payload)).toEqual(['ON', 'ON'])
   })
 
   it('parses tasmota stat power and result/state payloads', () => {
@@ -95,26 +74,53 @@ describe('mqtt compatibility helpers', () => {
     })
   })
 
-  it('builds and resolves lwt snapshot topics for both profiles', () => {
+  it('builds and resolves lwt snapshot topics for tasmota fulltopic variants', () => {
     const topics = buildLwtSnapshotSubscribeTopics(['lampu-1'])
 
     expect(topics).toEqual([
-      'home/lampu-1/lwt',
       'tele/lampu-1/LWT',
       'lampu-1/tele/LWT',
     ])
 
-    expect(extractLwtDeviceIdFromTopic('home/lampu-1/lwt')).toBe('lampu-1')
     expect(extractLwtDeviceIdFromTopic('tele/lampu-1/LWT')).toBe('lampu-1')
     expect(extractLwtDeviceIdFromTopic('lampu-1/tele/LWT')).toBe('lampu-1')
   })
 
   it('includes tasmota subscribe topics in realtime proxy filters', () => {
     const topics = getRealtimeSubscribeTopics()
-    expect(topics).toContain('home/+/status')
     expect(topics).toContain('stat/+/POWER')
     expect(topics).toContain('stat/+/RESULT')
     expect(topics).toContain('tele/+/STATE')
     expect(topics).toContain('tele/+/LWT')
+  })
+
+  it('provides wildcard topics for tasmota discovery scan', () => {
+    const topics = getTasmotaDiscoverySubscribeTopics()
+    expect(topics).toContain('tele/+/LWT')
+    expect(topics).toContain('+/tele/LWT')
+    expect(topics).toContain('tele/+/STATE')
+    expect(topics).toContain('+/tele/STATE')
+    expect(topics).toContain('stat/+/RESULT')
+    expect(topics).toContain('+/stat/RESULT')
+  })
+
+  it('normalizes and parses tasmota power payload variants', () => {
+    expect(normalizeTasmotaSwitchValue('ON')).toBe('ON')
+    expect(normalizeTasmotaSwitchValue('0')).toBe('OFF')
+    expect(normalizeTasmotaSwitchValue(1)).toBe('ON')
+    expect(normalizeTasmotaSwitchValue(false)).toBe('OFF')
+
+    expect(parseTasmotaPowerPayload('OFF')).toBe('OFF')
+    expect(parseTasmotaPowerPayload('{"POWER1":"ON"}')).toBe('ON')
+    expect(parseTasmotaPowerPayload('{"POWER":"OFF"}')).toBe('OFF')
+    expect(parseTasmotaPowerPayload('{"Foo":"Bar"}')).toBeNull()
+  })
+
+  it('extracts device id from tasmota topic order variants', () => {
+    expect(extractTasmotaDeviceIdFromTopic('stat/lamp-a/RESULT', 'stat')).toBe('lamp-a')
+    expect(extractTasmotaDeviceIdFromTopic('lamp-a/stat/RESULT', 'stat')).toBe('lamp-a')
+    expect(extractTasmotaDeviceIdFromTopic('tele/lamp-b/LWT', 'tele')).toBe('lamp-b')
+    expect(extractTasmotaDeviceIdFromTopic('lamp-b/tele/LWT', 'tele')).toBe('lamp-b')
+    expect(extractTasmotaDeviceIdFromTopic('invalid/topic', 'tele')).toBeNull()
   })
 })

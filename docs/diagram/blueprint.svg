@@ -176,7 +176,7 @@
   <text x="750" y="280" class="nodeTitle">Hono API (Node)</text>
   <text x="750" y="308" class="nodeText">Routes: auth, bootstrap, commands, schedules, realtime</text>
   <text x="750" y="332" class="nodeText">Security: JWT, ACL device, idempotency, rate limit</text>
-  <text x="750" y="356" class="nodeText">Command signing: HMAC envelope (ESP32 profile)</text>
+  <text x="750" y="356" class="nodeText">Command dispatch: backend ACL + publish POWER (Tasmota profile)</text>
 
   <rect x="720" y="430" width="900" height="140" class="nodeAlt"/>
   <text x="750" y="470" class="nodeTitle">Realtime MQTT Proxy (Node)</text>
@@ -238,7 +238,7 @@
   <rect x="3270" y="240" width="1160" height="230" class="nodeEdge"/>
   <text x="3300" y="280" class="nodeTitle">ESP32 SmartLamp Firmware</text>
   <text x="3300" y="308" class="nodeText">Subscribe native topic home/{deviceId}/cmd</text>
-  <text x="3300" y="332" class="nodeText">Verify HMAC sig + expiresAt + nonce (anti replay)</text>
+  <text x="3300" y="332" class="nodeText">Execute POWER command + publish status/LWT</text>
   <text x="3300" y="356" class="nodeText">Execute relay ON/OFF</text>
   <text x="3300" y="380" class="nodeText">Publish home/{deviceId}/status + home/{deviceId}/lwt</text>
   <text x="3300" y="404" class="nodeText">Clock sync via NTP for expiry validation</text>
@@ -321,7 +321,7 @@
   <rect x="70" y="1320" width="4430" height="300" class="node"/>
   <text x="96" y="1364" class="nodeTitle">Command + Feedback Flow (Actual Implementation)</text>
   <text x="96" y="1392" class="nodeTextSmall">1) Dashboard POST /api/v1/commands/execute -> 2) Hono validates ACL + signs envelope -> 3) Publish ke home/cmd + cmnd/POWER + {deviceId}/cmnd/POWER</text>
-  <text x="96" y="1418" class="nodeTextSmall">4) Device executes (ESP32 verify HMAC, Tasmota execute POWER) -> 5) Device publish status/lwt ke broker (home atau stat/tele)</text>
+  <text x="96" y="1418" class="nodeTextSmall">4) Device executes POWER -> 5) Device publish status/lwt ke broker (home atau stat/tele)</text>
   <text x="96" y="1444" class="nodeTextSmall">6) Backend realtime path ingest event MQTT -> emit SSE status/lwt -> dashboard auto update (Node proxy / Worker per-stream subscribe).</text>
   <text x="96" y="1476" class="legendText">Legend:</text>
   <line x1="172" y1="1472" x2="242" y2="1472" class="mainLink"/>

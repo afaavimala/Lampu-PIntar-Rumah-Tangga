@@ -173,7 +173,7 @@
 
   <rect x="750" y="240" width="840" height="170" class="node"/>
   <text x="782" y="282" class="nodeTitle">Hono API Lokal (Node.js)</text>
-  <text x="782" y="310" class="nodeText">Auth/session + ACL device + command signing</text>
+  <text x="782" y="310" class="nodeText">Auth/session + ACL device + command dispatch</text>
   <text x="782" y="334" class="nodeText">Publish command kompatibel ESP32/Tasmota via MQTT WSS</text>
   <text x="782" y="358" class="nodeText">Sumber command manual dan API integrasi</text>
 
@@ -225,7 +225,7 @@
   <rect x="3270" y="250" width="1160" height="250" class="nodeEdge"/>
   <text x="3302" y="292" class="nodeTitle">ESP32 + Tasmota Device Runtime</text>
   <text x="3302" y="320" class="nodeText">Menerima command dari HiveMQ sesuai profile topic</text>
-  <text x="3302" y="344" class="nodeText">ESP32 verifikasi HMAC/nonce/expiry, Tasmota eksekusi POWER</text>
+  <text x="3302" y="344" class="nodeText">ESP32/Tasmota eksekusi POWER lalu publish status/LWT</text>
   <text x="3302" y="368" class="nodeText">Keduanya publish status dan LWT kembali ke broker</text>
   <text x="3302" y="392" class="nodeText">Satu jalur feedback untuk dashboard realtime</text>
 

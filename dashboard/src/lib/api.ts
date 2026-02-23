@@ -1,14 +1,28 @@
 import type {
   ApiEnvelope,
   BootstrapResponse,
-  CommandEnvelope,
+  CommandDispatch,
   CommandAction,
+  DiscoveryResult,
   DeviceStatus,
   ScheduleRule,
   ScheduleRun,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
+
+type SchedulePatchInput = Partial<{
+  action: CommandAction
+  cron: string
+  timezone: string
+  enabled: boolean
+  startAt: string | null
+  endAt: string | null
+  windowGroupId: string | null
+  windowStartMinute: number | null
+  windowEndMinute: number | null
+  enforceEveryMinute: number | null
+}>
 
 async function safeParseEnvelope<T>(response: Response): Promise<ApiEnvelope<T> | null> {
   try {
@@ -37,7 +51,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}, allowRefresh = 
     },
   })
 
-  let payload = await safeParseEnvelope<T>(response)
+  const payload = await safeParseEnvelope<T>(response)
   if (
     response.status === 401 &&
     allowRefresh &&
@@ -54,7 +68,15 @@ async function apiFetch<T>(path: string, init: RequestInit = {}, allowRefresh = 
   }
 
   if (!response.ok || !payload?.success) {
-    const message = payload?.error?.message ?? `Request failed (${response.status})`
+    const requestId = response.headers.get('x-request-id')
+    const retryAfter = response.headers.get('retry-after')
+    let message = payload?.error?.message ?? `Request failed (${response.status})`
+    if (response.status === 429 && retryAfter) {
+      message = `${message}. Retry after ${retryAfter}s`
+    }
+    if (requestId) {
+      message = `${message} [requestId=${requestId}]`
+    }
     throw new Error(message)
   }
 
@@ -91,7 +113,6 @@ export function createDevice(input: {
   deviceId: string
   name: string
   location?: string
-  hmacSecret?: string
   idempotencyKey: string
 }) {
   return apiFetch<{ id: string; name: string; location: string | null }>('/api/v1/devices', {
@@ -101,26 +122,22 @@ export function createDevice(input: {
       deviceId: input.deviceId,
       name: input.name,
       location: input.location,
-      hmacSecret: input.hmacSecret,
     }),
   })
 }
 
-export function signCommand(input: {
-  deviceId: string
-  action: CommandAction
-  requestId: string
-  idempotencyKey: string
-}) {
-  return apiFetch<CommandEnvelope>('/api/v1/commands/sign', {
-    method: 'POST',
-    headers: jsonHeaders(input.idempotencyKey),
-    body: JSON.stringify({
-      deviceId: input.deviceId,
-      action: input.action,
-      requestId: input.requestId,
-    }),
-  })
+export function discoverDevices(input?: { waitMs?: number; maxDevices?: number }) {
+  const params = new URLSearchParams()
+  if (typeof input?.waitMs === 'number' && Number.isFinite(input.waitMs)) {
+    params.set('waitMs', String(Math.floor(input.waitMs)))
+  }
+  if (typeof input?.maxDevices === 'number' && Number.isFinite(input.maxDevices)) {
+    params.set('maxDevices', String(Math.floor(input.maxDevices)))
+  }
+
+  const suffix = params.toString()
+  const path = suffix ? `/api/v1/devices/discovery?${suffix}` : '/api/v1/devices/discovery'
+  return apiFetch<DiscoveryResult>(path)
 }
 
 export function executeCommand(input: {
@@ -129,7 +146,7 @@ export function executeCommand(input: {
   requestId: string
   idempotencyKey: string
 }) {
-  return apiFetch<CommandEnvelope>('/api/v1/commands/execute', {
+  return apiFetch<CommandDispatch>('/api/v1/commands/execute', {
     method: 'POST',
     headers: jsonHeaders(input.idempotencyKey),
     body: JSON.stringify({
@@ -156,6 +173,10 @@ export function createSchedule(input: {
   enabled: boolean
   startAt?: string
   endAt?: string
+  windowGroupId?: string
+  windowStartMinute?: number
+  windowEndMinute?: number
+  enforceEveryMinute?: number
   idempotencyKey: string
 }) {
   return apiFetch<ScheduleRule>('/api/v1/schedules', {
@@ -169,13 +190,17 @@ export function createSchedule(input: {
       enabled: input.enabled,
       startAt: input.startAt,
       endAt: input.endAt,
+      windowGroupId: input.windowGroupId,
+      windowStartMinute: input.windowStartMinute,
+      windowEndMinute: input.windowEndMinute,
+      enforceEveryMinute: input.enforceEveryMinute,
     }),
   })
 }
 
 export function patchSchedule(
   scheduleId: number,
-  patch: Partial<Pick<ScheduleRule, 'action' | 'cron' | 'timezone' | 'enabled'>>,
+  patch: SchedulePatchInput,
   idempotencyKey: string,
 ) {
   return apiFetch<ScheduleRule>(`/api/v1/schedules/${scheduleId}`, {

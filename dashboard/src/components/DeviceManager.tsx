@@ -1,19 +1,57 @@
 import { useState } from 'react'
+import type { DiscoveredDevice } from '../lib/types'
 
 type DeviceManagerProps = {
   onCreateDevice: (input: {
     deviceId: string
     name: string
     location?: string
-    hmacSecret?: string
   }) => Promise<void>
+  onDiscover: () => Promise<void>
+  onClaimDiscovered: (device: DiscoveredDevice) => Promise<void>
+  discoveredDevices: DiscoveredDevice[]
+  discovering?: boolean
+  claimingDeviceId?: string | null
+  discoveryScannedAt?: string | null
+  discoveryWaitMs?: number | null
+  busy?: boolean
 }
 
-export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+export function DeviceManager({
+  onCreateDevice,
+  onDiscover,
+  onClaimDiscovered,
+  discoveredDevices,
+  discovering = false,
+  claimingDeviceId = null,
+  discoveryScannedAt = null,
+  discoveryWaitMs = null,
+  busy = false,
+}: DeviceManagerProps) {
   const [deviceId, setDeviceId] = useState('')
   const [name, setName] = useState('')
   const [location, setLocation] = useState('')
-  const [hmacSecret, setHmacSecret] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   return (
@@ -29,12 +67,10 @@ export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
               deviceId: deviceId.trim(),
               name: name.trim(),
               location: location.trim() || undefined,
-              hmacSecret: hmacSecret.trim() || undefined,
             })
             setDeviceId('')
             setName('')
             setLocation('')
-            setHmacSecret('')
           } finally {
             setSubmitting(false)
           }
@@ -47,6 +83,7 @@ export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
             onChange={(event) => setDeviceId(event.target.value)}
             placeholder="contoh: lampu-teras"
             required
+            disabled={busy || submitting}
           />
         </label>
         <label>
@@ -56,6 +93,7 @@ export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
             onChange={(event) => setName(event.target.value)}
             placeholder="contoh: Lampu Teras"
             required
+            disabled={busy || submitting}
           />
         </label>
         <label>
@@ -64,23 +102,82 @@ export function DeviceManager({ onCreateDevice }: DeviceManagerProps) {
             value={location}
             onChange={(event) => setLocation(event.target.value)}
             placeholder="contoh: Teras Depan"
+            disabled={busy || submitting}
           />
         </label>
-        <label>
-          HMAC Secret (opsional)
-          <input
-            value={hmacSecret}
-            onChange={(event) => setHmacSecret(event.target.value)}
-            placeholder="kosongkan untuk pakai fallback backend"
-          />
-        </label>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" disabled={busy || submitting}>
           {submitting ? 'Menyimpan...' : 'Tambah Device'}
         </button>
       </form>
       <p className="small">
-        Topic command kompatibel: home/&lt;deviceId&gt;/cmd dan Tasmota cmnd/&lt;deviceId&gt;/POWER
+        Topic command Tasmota: cmnd/&lt;deviceId&gt;/POWER (juga kompatibel dengan &lt;deviceId&gt;/cmnd/POWER)
       </p>
+
+      <section className="device-discovery">
+        <div className="device-discovery-head">
+          <h4>Discovery Tasmota</h4>
+          <button
+            type="button"
+            className="device-discovery-button"
+            onClick={() => void onDiscover()}
+            disabled={busy || submitting || discovering}
+          >
+            {discovering ? 'Scanning...' : 'Scan Device'}
+          </button>
+        </div>
+
+        <p className="small">
+          Last scan: {formatDateTime(discoveryScannedAt)}
+          {typeof discoveryWaitMs === 'number' ? ` (window ${discoveryWaitMs}ms)` : ''}
+        </p>
+
+        {discoveredDevices.length === 0 ? (
+          <p className="small">Belum ada device Tasmota terdeteksi.</p>
+        ) : (
+          <ul className="device-discovery-list">
+            {discoveredDevices.map((device) => {
+              const claimDisabled =
+                busy ||
+                submitting ||
+                discovering ||
+                claimingDeviceId === device.deviceId ||
+                device.alreadyLinked ||
+                device.alreadyRegistered
+              const claimLabel = device.alreadyLinked
+                ? 'Sudah Ditambahkan'
+                : device.alreadyRegistered
+                  ? 'Sudah Terdaftar'
+                  : claimingDeviceId === device.deviceId
+                    ? 'Menambah...'
+                    : 'Tambah'
+
+              return (
+                <li key={device.deviceId}>
+                  <div className="device-discovery-meta">
+                    <strong>{device.deviceId}</strong>
+                    <p>
+                      Nama: {device.suggestedName} • Power: {device.power} •{' '}
+                      {device.online == null ? 'ONLINE ?' : device.online ? 'ONLINE' : 'OFFLINE'}
+                    </p>
+                    <p>
+                      Source: {device.sources.join(', ') || '-'} • Last seen:{' '}
+                      {formatDateTime(device.lastSeenAt)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`device-discovery-claim ${device.alreadyLinked || device.alreadyRegistered ? 'off' : ''}`}
+                    onClick={() => void onClaimDiscovered(device)}
+                    disabled={claimDisabled}
+                  >
+                    {claimLabel}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
     </section>
   )
 }

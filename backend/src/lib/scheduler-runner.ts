@@ -1,6 +1,7 @@
 import { computeNextRunAt } from './schedules'
-import { createSignedEnvelope, logCommandSignature } from './commands'
+import { createCommandEnvelope, logCommandDispatch } from './commands'
 import type { EnvBindings } from '../types/app'
+import { getRealtimeMqttProxy } from './realtime-mqtt-proxy'
 import { publishCompatibleCommandOverWs } from './mqtt-command-publish'
 
 type DueScheduleRow = {
@@ -12,7 +13,63 @@ type DueScheduleRow = {
   cron_expr: string
   timezone: string
   next_run_at: number
-  hmac_secret: string | null
+  window_group_id: string | null
+  window_start_minute: number | null
+  window_end_minute: number | null
+  enforce_every_minute: number | null
+}
+
+function toLocalMinuteOfDay(epochMs: number, timezone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(new Date(epochMs))
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '')
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '')
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+      return null
+    }
+    return hour * 60 + minute
+  } catch {
+    return null
+  }
+}
+
+function isWithinWindow(localMinute: number, startMinute: number, endMinute: number) {
+  if (startMinute <= endMinute) {
+    return localMinute >= startMinute && localMinute <= endMinute
+  }
+  return localMinute >= startMinute || localMinute <= endMinute
+}
+
+function shouldExecuteForWindow(row: DueScheduleRow, plannedAt: number) {
+  if (
+    row.window_start_minute == null ||
+    row.window_end_minute == null ||
+    row.enforce_every_minute == null
+  ) {
+    return true
+  }
+
+  const localMinute = toLocalMinuteOfDay(plannedAt, row.timezone)
+  if (localMinute == null) {
+    return true
+  }
+
+  const startMinute = Math.max(0, Math.min(1439, Number(row.window_start_minute)))
+  const endMinute = Math.max(0, Math.min(1439, Number(row.window_end_minute)))
+  const interval = Math.max(1, Math.min(1440, Number(row.enforce_every_minute)))
+
+  if (!isWithinWindow(localMinute, startMinute, endMinute)) {
+    return false
+  }
+
+  const elapsedSinceStart =
+    localMinute >= startMinute ? localMinute - startMinute : 1440 - startMinute + localMinute
+  return elapsedSinceStart % interval === 0
 }
 
 export async function runDueSchedules(env: EnvBindings) {
@@ -27,7 +84,10 @@ export async function runDueSchedules(env: EnvBindings) {
               ds.cron_expr,
               ds.timezone,
               ds.next_run_at,
-              d.hmac_secret
+              ds.window_group_id,
+              ds.window_start_minute,
+              ds.window_end_minute,
+              ds.enforce_every_minute
        FROM device_schedules ds
        INNER JOIN devices d ON d.id = ds.device_id
        WHERE ds.enabled = 1
@@ -67,6 +127,11 @@ export async function runDueSchedules(env: EnvBindings) {
 async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise<'processed' | 'failed' | 'skipped'> {
   const plannedAt = row.next_run_at
 
+  if (!shouldExecuteForWindow(row, plannedAt)) {
+    await advanceScheduleCursor(env, row, plannedAt, false)
+    return 'skipped'
+  }
+
   const insertSql = env.DB.dialect === 'mariadb'
     ? `INSERT IGNORE INTO schedule_runs
        (schedule_id, device_id, planned_at, status, created_at)
@@ -87,24 +152,23 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
 
   const requestId = `sch-${row.schedule_id}-${plannedAt}`
   try {
-    const hmacSecret = row.hmac_secret ?? env.HMAC_GLOBAL_FALLBACK_SECRET
-    if (!hmacSecret) {
-      throw new Error('Missing HMAC secret for schedule command signing')
-    }
-
-    const envelope = await createSignedEnvelope({
+    const envelope = createCommandEnvelope({
       deviceId: row.device_id,
       action: row.action,
       requestId,
-      hmacSecret,
     })
 
-    await publishCompatibleCommandOverWs({
-      url: env.MQTT_WS_URL,
-      username: env.MQTT_USERNAME,
-      password: env.MQTT_PASSWORD,
-      clientIdPrefix: env.MQTT_CLIENT_ID_PREFIX,
-    }, envelope)
+    const proxy = getRealtimeMqttProxy()
+    if (proxy) {
+      await proxy.publishCommand(envelope)
+    } else {
+      await publishCompatibleCommandOverWs({
+        url: env.MQTT_WS_URL,
+        username: env.MQTT_USERNAME,
+        password: env.MQTT_PASSWORD,
+        clientIdPrefix: env.MQTT_CLIENT_ID_PREFIX,
+      }, envelope)
+    }
 
     await env.DB
       .prepare(
@@ -115,14 +179,12 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
       .bind(Date.now(), requestId, row.schedule_id, plannedAt)
       .run()
 
-    await logCommandSignature({
+    await logCommandDispatch({
       db: env.DB,
       userId: row.user_id,
       deviceInternalId: row.device_internal_id,
       requestId,
       action: row.action,
-      issuedAt: envelope.issuedAt,
-      expiresAt: envelope.expiresAt,
       result: 'SCHEDULED_SUCCESS',
     })
 

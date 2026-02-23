@@ -1,33 +1,8 @@
-# ESP32 SmartLamp Firmware (Reference)
+# ESP32 SmartLamp Firmware (Legacy Archive)
 
-Firmware referensi untuk checklist Phase 2:
+Backend dan UI saat ini dikonfigurasi **khusus Tasmota profile** (`cmnd/stat/tele`).
 
-- MQTT TLS connect + reconnect
-- Subscribe topic command `home/{deviceId}/cmd`
-- Verifikasi signature HMAC command
-- Validasi expiry + nonce anti-replay
-- Publish status retained ke `home/{deviceId}/status`
-- Konfigurasi LWT `ONLINE/OFFLINE` ke `home/{deviceId}/lwt`
+Firmware native `home/{deviceId}/*` di folder ini disimpan hanya sebagai arsip eksperimen lama, bukan jalur integrasi resmi. Untuk implementasi aktif, gunakan perangkat Tasmota.
 
-File utama:
+File arsip:
 - `firmware/esp32-smartlamp/esp32-smartlamp.ino`
-
-## Dependency Arduino
-
-- `PubSubClient`
-- `ArduinoJson`
-
-## Konfigurasi yang wajib diisi
-
-Ubah nilai di bagian `CONFIGURATION` pada sketch:
-
-- `WIFI_SSID`, `WIFI_PASSWORD`
-- `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`
-- `DEVICE_ID`
-- `HMAC_SECRET`
-
-## Catatan penting
-
-- Default TLS di sketch menggunakan `setInsecure()` untuk memudahkan bootstrap awal.
-- Untuk produksi, ganti dengan sertifikat CA broker yang valid (`setCACert`).
-- Firmware ini referensi implementasi; validasi hardware in-field tetap wajib.

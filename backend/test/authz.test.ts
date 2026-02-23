@@ -75,7 +75,6 @@ describe('auth and access verification', () => {
         DB: db as any,
         JWT_SECRET: 'test-jwt-secret',
         MQTT_WS_URL: 'wss://broker.example/mqtt',
-        HMAC_GLOBAL_FALLBACK_SECRET: 'fallback-secret',
       } as any,
     )
 
@@ -103,13 +102,12 @@ describe('auth and access verification', () => {
         if (sql.includes('FROM rate_limit_hits')) {
           return null
         }
-        if (sql === 'SELECT id, device_id, name, location, hmac_secret FROM devices WHERE device_id = ? LIMIT 1') {
+        if (sql === 'SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1') {
           return {
             id: 99,
             device_id: 'device-user-b',
             name: 'Device User B',
             location: 'B',
-            hmac_secret: 'secret-device-b',
           }
         }
         if (sql === 'SELECT 1 AS ok FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1') {
@@ -163,7 +161,6 @@ describe('auth and access verification', () => {
         DB: db as any,
         JWT_SECRET: 'test-jwt-secret',
         MQTT_WS_URL: 'wss://broker.example/mqtt',
-        HMAC_GLOBAL_FALLBACK_SECRET: 'fallback-secret',
       } as any,
     )
 

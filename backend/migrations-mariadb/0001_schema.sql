@@ -1,3 +1,5 @@
+-- Consolidated MariaDB baseline schema (auth + rate limit + schedule enforcement window).
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   email VARCHAR(255) NOT NULL,
@@ -67,43 +69,6 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
   UNIQUE KEY uq_idempotency_key (idempotency_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS device_schedules (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id BIGINT UNSIGNED NOT NULL,
-  device_id BIGINT UNSIGNED NOT NULL,
-  action VARCHAR(16) NOT NULL,
-  cron_expr VARCHAR(128) NOT NULL,
-  timezone VARCHAR(128) NOT NULL,
-  enabled TINYINT(1) NOT NULL DEFAULT 1,
-  next_run_at BIGINT NOT NULL,
-  last_run_at BIGINT NULL,
-  start_at BIGINT NULL,
-  end_at BIGINT NULL,
-  created_at VARCHAR(64) NOT NULL,
-  updated_at VARCHAR(64) NOT NULL,
-  PRIMARY KEY (id),
-  KEY idx_device_schedules_due (enabled, next_run_at),
-  CONSTRAINT fk_device_schedules_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_device_schedules_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS schedule_runs (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  schedule_id BIGINT UNSIGNED NOT NULL,
-  device_id BIGINT UNSIGNED NOT NULL,
-  planned_at BIGINT NOT NULL,
-  executed_at BIGINT NULL,
-  request_id VARCHAR(255) NULL,
-  status VARCHAR(32) NOT NULL,
-  error_message TEXT NULL,
-  created_at VARCHAR(64) NOT NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_schedule_runs_schedule_planned (schedule_id, planned_at),
-  KEY idx_schedule_runs_schedule_id (schedule_id, planned_at),
-  CONSTRAINT fk_schedule_runs_schedule FOREIGN KEY (schedule_id) REFERENCES device_schedules(id) ON DELETE CASCADE,
-  CONSTRAINT fk_schedule_runs_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS rate_limit_hits (
   rate_key VARCHAR(255) NOT NULL,
   request_count INT NOT NULL,
@@ -133,4 +98,46 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   KEY idx_auth_sessions_expires (expires_at),
   CONSTRAINT fk_auth_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_auth_sessions_replacement FOREIGN KEY (replaced_by_session_id) REFERENCES auth_sessions(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS device_schedules (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  device_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(16) NOT NULL,
+  cron_expr VARCHAR(128) NOT NULL,
+  timezone VARCHAR(128) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  next_run_at BIGINT NOT NULL,
+  last_run_at BIGINT NULL,
+  start_at BIGINT NULL,
+  end_at BIGINT NULL,
+  window_group_id VARCHAR(191) NULL,
+  window_start_minute INT NULL,
+  window_end_minute INT NULL,
+  enforce_every_minute INT NULL,
+  created_at VARCHAR(64) NOT NULL,
+  updated_at VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_device_schedules_due (enabled, next_run_at),
+  KEY idx_device_schedules_window_group (window_group_id),
+  CONSTRAINT fk_device_schedules_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_device_schedules_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS schedule_runs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  schedule_id BIGINT UNSIGNED NOT NULL,
+  device_id BIGINT UNSIGNED NOT NULL,
+  planned_at BIGINT NOT NULL,
+  executed_at BIGINT NULL,
+  request_id VARCHAR(255) NULL,
+  status VARCHAR(32) NOT NULL,
+  error_message TEXT NULL,
+  created_at VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_schedule_runs_schedule_planned (schedule_id, planned_at),
+  KEY idx_schedule_runs_schedule_id (schedule_id, planned_at),
+  CONSTRAINT fk_schedule_runs_schedule FOREIGN KEY (schedule_id) REFERENCES device_schedules(id) ON DELETE CASCADE,
+  CONSTRAINT fk_schedule_runs_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

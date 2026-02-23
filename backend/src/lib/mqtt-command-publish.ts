@@ -1,4 +1,4 @@
-import type { SignedCommandEnvelope } from './commands'
+import type { CommandDispatchEnvelope } from './commands'
 import { buildCommandPublishTargets } from './mqtt-compat'
 import { publishMqttOverWs } from './mqtt-ws'
 
@@ -11,32 +11,39 @@ type PublishConfig = {
 
 export async function publishCompatibleCommandOverWs(
   config: PublishConfig,
-  envelope: SignedCommandEnvelope,
+  envelope: CommandDispatchEnvelope,
 ) {
   const targets = buildCommandPublishTargets({
     deviceId: envelope.deviceId,
     action: envelope.action,
-    envelopeJson: JSON.stringify(envelope),
   })
 
-  const errors: string[] = []
-  let succeeded = 0
-
-  for (const target of targets) {
-    try {
-      await publishMqttOverWs({
+  const publishResults = await Promise.allSettled(
+    targets.map((target) =>
+      publishMqttOverWs({
         url: config.url,
         username: config.username,
         password: config.password,
         clientIdPrefix: config.clientIdPrefix,
         topic: target.topic,
         payload: target.payload,
-      })
+      }),
+    ),
+  )
+
+  const errors: string[] = []
+  let succeeded = 0
+  for (let index = 0; index < publishResults.length; index += 1) {
+    const result = publishResults[index]
+    const target = targets[index]
+
+    if (result.status === 'fulfilled') {
       succeeded += 1
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      errors.push(`${target.topic}: ${message}`)
+      continue
     }
+
+    const message = result.reason instanceof Error ? result.reason.message : String(result.reason)
+    errors.push(`${target.topic}: ${message}`)
   }
 
   if (succeeded > 0) {

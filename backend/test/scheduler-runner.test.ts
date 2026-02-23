@@ -8,16 +8,12 @@ vi.mock('../src/lib/mqtt-ws', () => ({
 }))
 
 vi.mock('../src/lib/commands', () => ({
-  createSignedEnvelope: vi.fn(async (input: { deviceId: string; action: 'ON' | 'OFF'; requestId: string }) => ({
+  createCommandEnvelope: vi.fn((input: { deviceId: string; action: 'ON' | 'OFF'; requestId: string }) => ({
     deviceId: input.deviceId,
     action: input.action,
     requestId: input.requestId,
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 30_000,
-    nonce: 'nonce-test',
-    sig: 'sig-test',
   })),
-  logCommandSignature: vi.fn(async () => undefined),
+  logCommandDispatch: vi.fn(async () => undefined),
 }))
 
 type DueScheduleRow = {
@@ -29,7 +25,6 @@ type DueScheduleRow = {
   cron_expr: string
   timezone: string
   next_run_at: number
-  hmac_secret: string | null
 }
 
 class SchedulerDbMock implements AppDatabase {
@@ -97,7 +92,6 @@ describe('scheduler runner dedup', () => {
         cron_expr: '* * * * *',
         timezone: 'Asia/Jakarta',
         next_run_at: now - 5_000,
-        hmac_secret: 'hmac-test',
       },
     ])
 
@@ -107,7 +101,6 @@ describe('scheduler runner dedup', () => {
       MQTT_USERNAME: 'u',
       MQTT_PASSWORD: 'p',
       MQTT_CLIENT_ID_PREFIX: 'test',
-      HMAC_GLOBAL_FALLBACK_SECRET: 'fallback',
       JWT_SECRET: 'jwt',
     } as any)
 
@@ -120,7 +113,6 @@ describe('scheduler runner dedup', () => {
       MQTT_USERNAME: 'u',
       MQTT_PASSWORD: 'p',
       MQTT_CLIENT_ID_PREFIX: 'test',
-      HMAC_GLOBAL_FALLBACK_SECRET: 'fallback',
       JWT_SECRET: 'jwt',
     } as any)
 

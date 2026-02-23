@@ -141,7 +141,7 @@ export async function listDevicesByPrincipal(db: D1Database, principal: Principa
   if (principal.kind === 'user') {
     const result = await db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location, d.hmac_secret
+        `SELECT d.id, d.device_id, d.name, d.location
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
          WHERE ud.user_id = ?
@@ -153,7 +153,7 @@ export async function listDevicesByPrincipal(db: D1Database, principal: Principa
   }
 
   const result = await db
-    .prepare('SELECT id, device_id, name, location, hmac_secret FROM devices ORDER BY id ASC')
+    .prepare('SELECT id, device_id, name, location FROM devices ORDER BY id ASC')
     .all<DeviceRecord>()
   return result.results
 }
@@ -166,7 +166,7 @@ export async function getDeviceByDeviceIdForPrincipal(
   if (principal.kind === 'user') {
     return db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location, d.hmac_secret
+        `SELECT d.id, d.device_id, d.name, d.location
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
          WHERE ud.user_id = ? AND d.device_id = ?
@@ -177,14 +177,14 @@ export async function getDeviceByDeviceIdForPrincipal(
   }
 
   return db
-    .prepare('SELECT id, device_id, name, location, hmac_secret FROM devices WHERE device_id = ? LIMIT 1')
+    .prepare('SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1')
     .bind(deviceId)
     .first<DeviceRecord>()
 }
 
 export async function getDeviceByDeviceId(db: D1Database, deviceId: string) {
   return db
-    .prepare('SELECT id, device_id, name, location, hmac_secret FROM devices WHERE device_id = ? LIMIT 1')
+    .prepare('SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1')
     .bind(deviceId)
     .first<DeviceRecord>()
 }

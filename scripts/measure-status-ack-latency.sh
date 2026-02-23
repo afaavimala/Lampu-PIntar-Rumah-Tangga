@@ -25,8 +25,8 @@ MQTT_HOST="${MQTT_HOST#ws://}"
 MQTT_HOST="${MQTT_HOST%%/*}"
 MQTT_HOST="${MQTT_HOST%%:*}"
 
-CMD_TOPIC="home/${DEVICE_ID}/cmd"
-STATUS_TOPIC="home/${DEVICE_ID}/status"
+CMD_TOPIC="cmnd/${DEVICE_ID}/POWER"
+STATUS_TOPIC="stat/${DEVICE_ID}/POWER"
 
 TMP_DIR="$(mktemp -d)"
 COOKIE_FILE="$TMP_DIR/cookies.txt"
@@ -69,19 +69,13 @@ fi
   set -euo pipefail
   msg="$(mosquitto_sub -h "$MQTT_HOST" -p 8883 -u "$BACKEND_MQTT_USERNAME" -P "$BACKEND_MQTT_PASSWORD" -t "$CMD_TOPIC" -C 1 -W 30)"
   printf '%s' "$msg" >"$CMD_FILE"
-  request_id="$(printf '%s' "$msg" | sed -n 's/.*"requestId":"\([^"]*\)".*/\1/p')"
-  if [[ -z "$request_id" ]]; then
-    request_id="unknown-request-id"
-  fi
-  ack_ts="$(date +%s%3N)"
-  ack_payload="$(printf '{"deviceId":"%s","power":"ON","ts":%s,"requestId":"%s","source":"latency-sim"}' "$DEVICE_ID" "$ack_ts" "$request_id")"
-  mosquitto_pub -h "$MQTT_HOST" -p 8883 -u "$BACKEND_MQTT_USERNAME" -P "$BACKEND_MQTT_PASSWORD" -t "$STATUS_TOPIC" -m "$ack_payload" -r
+  mosquitto_pub -h "$MQTT_HOST" -p 8883 -u "$BACKEND_MQTT_USERNAME" -P "$BACKEND_MQTT_PASSWORD" -t "$STATUS_TOPIC" -m "$msg"
 ) &
 echo "$!" >"$CMD_PID_FILE"
 
 (
   set -euo pipefail
-  msg="$(mosquitto_sub -h "$MQTT_HOST" -p 8883 -u "$BACKEND_MQTT_USERNAME" -P "$BACKEND_MQTT_PASSWORD" -t "$STATUS_TOPIC" -C 1 -W 30)"
+  msg="$(mosquitto_sub -R -h "$MQTT_HOST" -p 8883 -u "$BACKEND_MQTT_USERNAME" -P "$BACKEND_MQTT_PASSWORD" -t "$STATUS_TOPIC" -C 1 -W 30)"
   printf '%s' "$msg" >"$STATUS_FILE"
   date +%s%3N >"$STATUS_TS_FILE"
 ) &

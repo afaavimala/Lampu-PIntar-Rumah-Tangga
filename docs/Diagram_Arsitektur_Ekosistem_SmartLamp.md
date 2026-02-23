@@ -93,7 +93,7 @@ flowchart TB
 | Dashboard -> Backend | Browser ke API | HTTPS REST + JSON | `/api/v1/auth/*`, `/api/v1/bootstrap`, `/api/v1/commands/*`, `/api/v1/schedules*`, `/api/v1/devices*`, `/api/v1/status` | JSON request/response |
 | Backend -> Dashboard | API ke Browser | SSE (`text/event-stream`) | `/api/v1/realtime/stream` | Event `hello`, `ping`, `status`, `lwt` |
 | Integrasi eksternal -> Backend | Client integrasi ke API | HTTPS REST + Bearer API Key | `/api/v1/integrations/capabilities`, `/api/v1/devices*`, `/api/v1/schedules*`, dll | JSON |
-| Backend -> Broker | Hono runtime ke HiveMQ | MQTT 3.1.1 over WSS (`mqtt` subprotocol) | `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER` | `CommandEnvelope` (profile SmartLamp) + payload `ON/OFF` (profile Tasmota) |
+| Backend -> Broker | Hono runtime ke HiveMQ | MQTT 3.1.1 over WSS (`mqtt` subprotocol) | `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER` | payload `ON/OFF` (profile Tasmota) |
 | Broker -> Backend (Node) | HiveMQ ke realtime proxy | MQTT 3.1.1 over WSS subscribe | `home/+/status`, `home/+/lwt`, `stat/+/POWER(1..8)`, `+/stat/POWER(1..8)`, `stat/+/RESULT`, `+/stat/RESULT`, `tele/+/STATE`, `+/tele/STATE`, `tele/+/LWT`, `+/tele/LWT` | JSON status + string LWT |
 | ESP32 <-> Broker | Device ke HiveMQ | MQTT over TLS (TCP/8883) | `home/{deviceId}/cmd`, `home/{deviceId}/status`, `home/{deviceId}/lwt` | Command JSON, status JSON, LWT string |
 | Tasmota <-> Broker | Device Tasmota ke broker | MQTT | `cmnd/{topic}/POWER`, `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE|LWT` | payload `ON/OFF`, JSON state, LWT `Online/Offline` |
@@ -104,18 +104,15 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  CMD["home/{deviceId}/cmd<br/>JSON CommandEnvelope"]
   STATUS["home/{deviceId}/status<br/>JSON DeviceStatus"]
   LWT["home/{deviceId}/lwt<br/>ONLINE/OFFLINE"]
   TCMND["cmnd/{deviceId}/POWER<br/>ON/OFF"]
   TSTAT["stat/{deviceId}/POWER|RESULT<br/>Tasmota state"]
   TTELE["tele/{deviceId}/STATE|LWT<br/>Tasmota teleperiod+lwt"]
 
-  API["Backend Command API / Scheduler"] --> CMD
-  API --> TCMND
+  API["Backend Command API / Scheduler"] --> TCMND
   ESP["ESP32 Firmware"] --> STATUS
   ESP --> LWT
-  CMD --> ESP
   STATUS --> RT["Realtime MQTT Reader<br/>(Node proxy / Worker per-stream)"]
   LWT --> RT
   TSTAT --> RT
@@ -124,17 +121,13 @@ flowchart LR
   RT --> SSE["SSE Stream ke Dashboard"]
 ```
 
-`CommandEnvelope`:
+`CommandDispatch`:
 
 ```json
 {
   "deviceId": "lampu-ruang-tamu",
   "action": "ON",
-  "requestId": "uuid",
-  "issuedAt": 1739999999000,
-  "expiresAt": 1739999999000,
-  "nonce": "uuid",
-  "sig": "hex-hmac-sha256"
+  "requestId": "uuid"
 }
 ```
 
@@ -153,11 +146,10 @@ sequenceDiagram
   U->>FE: Klik ON/OFF
   FE->>API: POST /api/v1/commands/execute\n(Cookie JWT + Idempotency-Key)
   API->>DB: Validasi user/device access
-  API->>API: Sign envelope (HMAC-SHA256)\n+ nonce + expiresAt
-  API->>MQ: PUBLISH QoS1 home/{deviceId}/cmd + cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
+  API->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
   API->>DB: INSERT command_logs(result=PUBLISHED)
   MQ->>ESP: Deliver command profile sesuai device
-  ESP->>ESP: ESP32 verify HMAC, Tasmota execute POWER
+  ESP->>ESP: Tasmota execute POWER
   ESP->>MQ: PUBLISH status (home/{deviceId}/status atau stat/{topic}/POWER|RESULT, tele/{topic}/STATE)
   ESP->>MQ: Publish/maintain LWT (home/{deviceId}/lwt atau tele/{topic}/LWT)
   MQ-->>API: status/lwt event (Node proxy atau Worker per-stream subscribe)
@@ -211,10 +203,9 @@ sequenceDiagram
   T->>SCH: runDueSchedules()
   SCH->>DB: SELECT due schedules (enabled + next_run_at <= now)
   SCH->>DB: INSERT schedule_runs (idempotent by unique schedule_id+planned_at)
-  SCH->>SCH: createSignedEnvelope(HMAC)
-  SCH->>MQ: PUBLISH QoS1 home/{deviceId}/cmd + cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
+  SCH->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
   MQ->>ESP: command schedule
-  ESP->>ESP: verify + execute relay
+  ESP->>ESP: execute relay
   SCH->>DB: UPDATE schedule_runs SUCCESS/FAILED
   SCH->>DB: UPDATE device_schedules next_run_at (+ last_run_at)
 ```
@@ -244,7 +235,6 @@ erDiagram
     string device_id UK
     string name
     string location
-    string hmac_secret
   }
   USER_DEVICES {
     int user_id PK,FK
@@ -313,7 +303,5 @@ erDiagram
 ## 8) Ringkasan Security Layer yang Terlibat
 
 - Session auth: JWT HS256 untuk access token (`auth_token`) + opaque refresh token (`refresh_token`) di cookie HttpOnly.
-- Command integrity: HMAC-SHA256 signature (`sig`) pada envelope command.
-- Anti-replay command di device: `nonce` cache + `expiresAt`.
 - Idempotency API mutasi: header `Idempotency-Key` (server simpan `idempotency_records`).
-- Rate limit: login dan command signing (`rate_limit_hits`).
+- Rate limit: login dan command execute (`rate_limit_hits`).

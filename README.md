@@ -40,7 +40,7 @@ Mode cloudflare:
 backend/    # Hono API (Node + Worker), migrasi MariaDB & D1
 dashboard/  # Vite React dashboard + realtime SSE client
 scripts/    # script setup/build/deploy lokal + cloud
-firmware/   # referensi firmware ESP32 SmartLamp (MQTT TLS + HMAC verify + LWT)
+firmware/   # referensi firmware ESP32 SmartLamp / Tasmota (MQTT + LWT)
 docs/       # diagram arsitektur, dokumentasi utama, hasil verifikasi
 ```
 
@@ -102,8 +102,12 @@ npm run deploy:worker
 # verifikasi tambahan (opsional)
 VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/verify-parallel-devices.sh
 VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/measure-status-ack-latency.sh
-./scripts/verify-command-security.sh
 ```
+
+Catatan migrasi SQL:
+- File migrasi dikonsolidasi menjadi baseline tunggal per engine.
+- D1: `backend/migrations/0001_schema.sql`
+- MariaDB: `backend/migrations-mariadb/0001_schema.sql`
 
 ## Setup Development Lokal
 
@@ -128,7 +132,7 @@ cp .env.example .env
 ```
 3. Isi `.env` minimal:
 - `BACKEND_DB_HOST`, `BACKEND_DB_PORT`, `BACKEND_DB_USER`, `BACKEND_DB_PASSWORD`, `BACKEND_DB_NAME`
-- `BACKEND_JWT_SECRET`, `BACKEND_HMAC_GLOBAL_FALLBACK_SECRET`
+- `BACKEND_JWT_SECRET`
 - `BACKEND_MQTT_WS_URL`, `BACKEND_MQTT_USERNAME`, `BACKEND_MQTT_PASSWORD`
 4. Generate env lokal turunan.
 ```bash
@@ -192,7 +196,8 @@ npm run start:production
 
 Verifikasi:
 - App: `http://127.0.0.1:<BACKEND_PORT>`
-- Health: `GET /api/health`
+- Health (kanonik): `GET /api/health`
+- Health (alias kompatibilitas probe): `GET /health`
 
 Catatan:
 - `npm run start:production` akan selalu menjalankan `env:production` dulu agar konfigurasi turunan tetap sinkron dengan root `.env`.
@@ -282,7 +287,6 @@ Auth:
 Core:
 - `GET /api/v1/bootstrap`
 - `POST /api/v1/commands/execute` (utama, dipakai dashboard)
-- `POST /api/v1/commands/sign` (opsional kompatibilitas)
 - `GET /api/v1/realtime/stream` (SSE)
 - `GET /api/v1/status`
 
@@ -299,48 +303,24 @@ Open integration:
 - `GET /api/v1/integrations/capabilities`
 - `POST /api/v1/devices` (tambah device dan assign ke user login)
 - `GET /api/v1/devices`
+- `GET /api/v1/devices/discovery` (scan auto-discovery device Tasmota via MQTT)
 - `GET /api/v1/devices/{deviceId}`
 - `GET /api/v1/devices/{deviceId}/status`
 - `GET /api/v1/openapi.json`
 
-## MQTT Contract (ESP32 Integration)
+## MQTT Contract (Tasmota Only)
 
-Topic standar:
-- Command: `home/{deviceId}/cmd`
-- Status: `home/{deviceId}/status`
-- LWT: `home/{deviceId}/lwt`
+Topic standar Tasmota:
+- Command: `cmnd/{deviceId}/POWER` atau `{deviceId}/cmnd/POWER`
+- Status: `stat/{deviceId}/POWER`, `stat/{deviceId}/RESULT`, `tele/{deviceId}/STATE`
+- LWT: `tele/{deviceId}/LWT` atau `{deviceId}/tele/LWT`
 
-QoS/retain yang dipakai sistem:
-- `cmd`: QoS 1, retain `false` (publish dari backend)
-- `status`: QoS 1, retain `true` (publish dari device)
-- `lwt`: QoS 1, retain `true` (LWT online/offline dari device)
+Payload command (backend -> device):
+- `ON` atau `OFF` (plain text).
 
-Payload command (backend -> ESP32):
-
-```json
-{
-  "deviceId": "lampu-ruang-tamu",
-  "action": "ON",
-  "requestId": "req-123",
-  "issuedAt": 1739786400000,
-  "expiresAt": 1739786430000,
-  "nonce": "uuid-v4",
-  "sig": "hex-hmac-sha256"
-}
-```
-
-Signing canonical string (untuk verifikasi `sig` di ESP32):
-
-```text
-deviceId|action|requestId|issuedAt|expiresAt|nonce
-```
-
-Checklist integrasi ESP32:
-- Subscribe `home/{deviceId}/cmd`, parse JSON envelope command.
-- Verifikasi signature HMAC SHA-256 menggunakan secret device/global yang sama dengan backend.
-- Tolak command jika `expiresAt` sudah lewat atau `nonce` pernah dipakai (anti replay).
-- Sinkronkan waktu device (NTP) agar validasi `issuedAt`/`expiresAt` akurat.
-- Publish status ke `home/{deviceId}/status` dan set LWT ke `home/{deviceId}/lwt`.
+Catatan:
+- Backend tidak lagi memakai profile native `home/{deviceId}/*`.
+- Parser realtime backend hanya menerima event Tasmota (`stat/*`, `tele/*`).
 
 Source of truth implementasi:
 - `backend/src/routes/commands.ts`

@@ -8,7 +8,6 @@ export type EnvBindings = {
   DB: AppDatabase
   ASSETS?: WorkerAssetsBinding
   JWT_SECRET: string
-  HMAC_GLOBAL_FALLBACK_SECRET?: string
   MQTT_WS_URL: string
   MQTT_USERNAME?: string
   MQTT_PASSWORD?: string
@@ -21,8 +20,8 @@ export type EnvBindings = {
   CORS_ORIGINS?: string
   AUTH_LOGIN_RATE_LIMIT_MAX?: string
   AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC?: string
-  COMMAND_SIGN_RATE_LIMIT_MAX?: string
-  COMMAND_SIGN_RATE_LIMIT_WINDOW_SEC?: string
+  COMMAND_EXECUTE_RATE_LIMIT_MAX?: string
+  COMMAND_EXECUTE_RATE_LIMIT_WINDOW_SEC?: string
   SEED_ADMIN_EMAIL?: string
   SEED_ADMIN_PASSWORD?: string
   SEED_SAMPLE_DEVICE_ID?: string
@@ -78,5 +77,4 @@ export type DeviceRecord = {
   device_id: string
   name: string
   location: string | null
-  hmac_secret: string | null
 }

@@ -53,11 +53,17 @@ export function createApp() {
     return fail(c, 'INTERNAL_ERROR', 'Internal server error', 500)
   })
 
+  const healthPayload = {
+    name: 'smartlamp-backend',
+    status: 'ok' as const,
+  }
+
+  app.get('/health', (c) => {
+    return ok(c, healthPayload)
+  })
+
   app.get('/api/health', (c) => {
-    return ok(c, {
-      name: 'smartlamp-backend',
-      status: 'ok',
-    })
+    return ok(c, healthPayload)
   })
 
   app.route('/api/v1/auth', authRoutes)

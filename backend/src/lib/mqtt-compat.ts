@@ -15,17 +15,27 @@ export type ParsedRealtimeMqttEvent =
 export type CommandPublishTarget = {
   topic: string
   payload: string
-  profile: 'smartlamp' | 'tasmota'
 }
+
+export type NormalizedSwitchPower = 'ON' | 'OFF'
 
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
-function normalizeSwitchValue(value: unknown): string | null {
+export function normalizeTasmotaSwitchValue(value: unknown): NormalizedSwitchPower | null {
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase()
-    return normalized || null
+    if (normalized === 'ON' || normalized === 'OFF') {
+      return normalized
+    }
+    if (normalized === '1') {
+      return 'ON'
+    }
+    if (normalized === '0') {
+      return 'OFF'
+    }
+    return null
   }
 
   if (typeof value === 'number') {
@@ -39,15 +49,15 @@ function normalizeSwitchValue(value: unknown): string | null {
   return null
 }
 
-function extractPowerFromObject(payload: Record<string, unknown>) {
-  const directPower = normalizeSwitchValue(payload.POWER)
+export function extractTasmotaPowerFromObject(payload: Record<string, unknown>) {
+  const directPower = normalizeTasmotaSwitchValue(payload.POWER)
   if (directPower) {
     return directPower
   }
 
   for (const [key, value] of Object.entries(payload)) {
     if (/^POWER\d+$/i.test(key)) {
-      const normalized = normalizeSwitchValue(value)
+      const normalized = normalizeTasmotaSwitchValue(value)
       if (normalized) {
         return normalized
       }
@@ -57,13 +67,20 @@ function extractPowerFromObject(payload: Record<string, unknown>) {
   return null
 }
 
-function parseHomeStatusPayload(payload: string) {
-  try {
-    const parsed = JSON.parse(payload) as Record<string, unknown>
-    return parsed
-  } catch {
-    return { raw: payload }
+export function parseTasmotaPowerPayload(payload: string): NormalizedSwitchPower | null {
+  const asSwitchText = normalizeTasmotaSwitchValue(payload)
+  if (asSwitchText) {
+    return asSwitchText
   }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(payload) as Record<string, unknown>
+  } catch {
+    return null
+  }
+
+  return extractTasmotaPowerFromObject(parsed)
 }
 
 function parseTasmotaJsonStatus(topic: string, payload: string, source: string): ParsedRealtimeMqttEvent | null {
@@ -74,7 +91,7 @@ function parseTasmotaJsonStatus(topic: string, payload: string, source: string):
     return null
   }
 
-  const power = extractPowerFromObject(parsed)
+  const power = extractTasmotaPowerFromObject(parsed)
   if (!power) {
     return null
   }
@@ -95,7 +112,7 @@ function parseTasmotaJsonStatus(topic: string, payload: string, source: string):
   }
 }
 
-function extractDeviceIdFromTopic(topic: string, expectedPrefix: 'home' | 'stat' | 'tele') {
+function extractDeviceIdFromTopic(topic: string, expectedPrefix: 'stat' | 'tele') {
   const parts = topic.split('/')
   if (parts.length !== 3) {
     return null
@@ -115,10 +132,13 @@ function extractDeviceIdFromTopic(topic: string, expectedPrefix: 'home' | 'stat'
   return null
 }
 
+export function extractTasmotaDeviceIdFromTopic(topic: string, expectedPrefix: 'stat' | 'tele') {
+  return extractDeviceIdFromTopic(topic, expectedPrefix)
+}
+
 export function buildCommandPublishTargets(input: {
   deviceId: string
   action: CommandAction
-  envelopeJson: string
 }): CommandPublishTarget[] {
   const deviceId = input.deviceId.trim()
   if (!deviceId) {
@@ -127,19 +147,12 @@ export function buildCommandPublishTargets(input: {
 
   return [
     {
-      topic: `home/${deviceId}/cmd`,
-      payload: input.envelopeJson,
-      profile: 'smartlamp',
-    },
-    {
       topic: `cmnd/${deviceId}/POWER`,
       payload: input.action,
-      profile: 'tasmota',
     },
     {
       topic: `${deviceId}/cmnd/POWER`,
       payload: input.action,
-      profile: 'tasmota',
     },
   ]
 }
@@ -151,8 +164,6 @@ export function getRealtimeSubscribeTopics() {
   }).flat()
 
   return uniqueValues([
-    'home/+/status',
-    'home/+/lwt',
     ...tasmotaPowerTopics,
     'stat/+/RESULT',
     '+/stat/RESULT',
@@ -160,6 +171,19 @@ export function getRealtimeSubscribeTopics() {
     '+/tele/STATE',
     'tele/+/LWT',
     '+/tele/LWT',
+  ])
+}
+
+export function getTasmotaDiscoverySubscribeTopics() {
+  return uniqueValues([
+    'tele/+/LWT',
+    '+/tele/LWT',
+    'tele/+/STATE',
+    '+/tele/STATE',
+    'stat/+/RESULT',
+    '+/stat/RESULT',
+    'stat/+/POWER',
+    '+/stat/POWER',
   ])
 }
 
@@ -173,29 +197,13 @@ export function parseRealtimeMqttMessage(topic: string, payload: string): Parsed
   const left = parts[0].toLowerCase()
   const middle = parts[1].toLowerCase()
 
-  if (left === 'home' && suffix === 'status') {
-    return {
-      type: 'status',
-      deviceId: parts[1],
-      payload: parseHomeStatusPayload(payload),
-    }
-  }
-
-  if (left === 'home' && suffix === 'lwt') {
-    return {
-      type: 'lwt',
-      deviceId: parts[1],
-      payload: payload.trim().toUpperCase(),
-    }
-  }
-
   if ((left === 'stat' || middle === 'stat') && /^power\d*$/i.test(parts[2])) {
     const deviceId = extractDeviceIdFromTopic(topic, 'stat')
     if (!deviceId) {
       return null
     }
 
-    const power = normalizeSwitchValue(payload) ?? payload.trim()
+    const power = parseTasmotaPowerPayload(payload) ?? payload.trim().toUpperCase()
     if (!power) {
       return null
     }
@@ -237,7 +245,6 @@ export function parseRealtimeMqttMessage(topic: string, payload: string): Parsed
 export function buildLwtSnapshotSubscribeTopics(deviceIds: string[]) {
   const cleanedDeviceIds = deviceIds.map((id) => id.trim()).filter(Boolean)
   const topics = cleanedDeviceIds.flatMap((deviceId) => [
-    `home/${deviceId}/lwt`,
     `tele/${deviceId}/LWT`,
     `${deviceId}/tele/LWT`,
   ])
@@ -257,7 +264,7 @@ export function extractLwtDeviceIdFromTopic(topic: string) {
     return null
   }
 
-  if (left === 'home' || left === 'tele') {
+  if (left === 'tele') {
     return parts[1]
   }
 

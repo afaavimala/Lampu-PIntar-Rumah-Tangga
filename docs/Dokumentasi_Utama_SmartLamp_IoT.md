@@ -17,7 +17,7 @@ Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan
 - Framework frontend wajib: `Vite` untuk build dashboard web.
 - API bersifat `open integration` dengan standar kontrak REST yang stabil.
 - Sistem mendukung `penjadwalan otomatis` ON/OFF berbasis waktu (cron + timezone).
-- Keamanan command: `shared MQTT credential` + `signed payload (HMAC)` + `short expiry`.
+- Keamanan command: `shared MQTT credential` + validasi akses di backend + idempotency + rate limit.
 - Mode deployment utama: local server (self-host) dengan MariaDB.
 
 ---
@@ -25,10 +25,10 @@ Arsitektur ini digunakan untuk kontrol lampu rumah tangga secara realtime dengan
 # 2. Ringkasan Ekosistem
 
 - `Vite App`: frontend dashboard (bundle/build via Vite).
-- `Hono App + Node.js`: login JWT, authorisasi device, execute command (sign + publish), audit log, scheduler runner, dan realtime proxy MQTT -> SSE.
+- `Hono App + Node.js`: login JWT, authorisasi device, execute command (publish via backend), audit log, scheduler runner, dan realtime proxy MQTT -> SSE.
 - `MariaDB`: users, devices, relasi user-device, dan command logs.
 - `HiveMQ Broker`: bus pesan realtime MQTT.
-- `ESP32 + Relay`: subscribe command native, verifikasi signature, eksekusi ON/OFF, publish status.
+- `ESP32 + Relay`: subscribe command native, eksekusi ON/OFF, publish status.
 - `Tasmota Device`: menerima command `POWER`, publish status/LWT via topic `stat/tele`.
 
 ## 2.1 Standar Framework (Wajib)
@@ -63,7 +63,7 @@ Dashboard (Browser)
 Backend Node.js (Hono)
   -> validasi JWT
   -> cek akses user-device
-  -> generate + publish signed command envelope
+  -> publish command ON/OFF via backend proxy
   -> stream realtime status/lwt via SSE
   -> eksekusi scheduler trigger (due schedules)
   -> simpan audit ke MariaDB
@@ -78,7 +78,7 @@ Backend ------- MQTT WSS --/
 
 Backend subscribe status/lwt dari profile native (`home/*`) dan Tasmota (`stat/*`, `tele/*`) lalu mem-forward ke SSE dashboard.
 Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER`.
-ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay; Tasmota mengeksekusi command `POWER` sesuai konfigurasinya.
+Device mengeksekusi command `POWER` dan mem-publish status/LWT sesuai profil topic.
 ```
 
 ---
@@ -106,15 +106,14 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay; Tasmota menge
 3. Backend return konfigurasi realtime stream (`mode=proxy_sse`, `streamPath=/api/v1/realtime/stream`).
 4. Dashboard membuka SSE ke backend dan menerima event status/lwt sesuai akses device user.
 
-## 4.4 Kontrol Lampu (Signed Command)
+## 4.4 Kontrol Lampu (Backend Command)
 
 1. User klik ON/OFF pada device tertentu.
 2. Dashboard request `POST /api/v1/commands/execute` ke backend.
-3. Backend validasi JWT + akses device, lalu menandatangani command envelope (HMAC).
+3. Backend validasi JWT + akses device.
 4. Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
 5. Backend simpan audit command ke MariaDB.
-6. Untuk profile ESP32: device verifikasi `sig`, `expiresAt`, dan `nonce`.
-7. Device menjalankan ON/OFF lalu publish status terbaru (native atau Tasmota).
+6. Device menjalankan ON/OFF lalu publish status terbaru (native atau Tasmota).
 
 ## 4.5 Realtime Status
 
@@ -129,10 +128,9 @@ ESP32 verifikasi signature + expiry + nonce sebelum kontrol relay; Tasmota menge
 2. Backend validasi JWT + akses user-device + validasi cron dan timezone.
 3. Backend simpan rule jadwal ke MariaDB dan hitung `next_run_at`.
 4. Scheduler process di backend berjalan periodik (misalnya per menit) untuk mengambil jadwal jatuh tempo.
-5. Untuk setiap jadwal due, backend membuat signed command envelope (HMAC) seperti command manual.
+5. Untuk setiap jadwal due, backend membangun command ON/OFF seperti command manual.
 6. Backend publish command schedule ke broker (MQTT over WSS) ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
-7. ESP32 verifikasi signature, expiry, nonce, lalu eksekusi relay.
-8. Backend simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
+7. Backend simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
 
 ---
 
@@ -174,17 +172,13 @@ type CommandExecuteRequest = {
 };
 ```
 
-### Command Envelope (Backend -> MQTT cmd topic)
+### Command Dispatch (Backend -> MQTT cmd topic)
 
 ```ts
-type CommandEnvelope = {
+type CommandDispatch = {
   deviceId: string;
   action: "ON" | "OFF";
   requestId: string;
-  issuedAt: number;
-  expiresAt: number;
-  nonce: string;
-  sig: string;
 };
 ```
 
@@ -254,14 +248,11 @@ Response minimal:
 - `realtime.mode` (`proxy_sse`)
 - `realtime.streamPath` (`/api/v1/realtime/stream`)
 
-## 6.4 POST /api/v1/commands/sign
+## 6.4 POST /api/v1/commands/execute
 
 Fungsi:
-- endpoint kompatibilitas untuk generate envelope bertanda tangan tanpa publish
-- tetap butuh validasi JWT + akses user-device
-
-Endpoint operasional utama:
-- `POST /api/v1/commands/execute` untuk sign + publish command ke broker dari backend
+- endpoint operasional utama untuk publish command ON/OFF ke broker dari backend
+- butuh validasi JWT + akses user-device
 - endpoint ini yang dipakai dashboard saat kontrol ON/OFF
 
 ## 6.5 Scheduler Endpoints
@@ -312,7 +303,7 @@ Tujuan:
 - `Content-Type: application/json`
 - `Authorization: Bearer <jwt_or_api_key>`
 - `X-Request-Id: <uuid>` (disarankan)
-- `Idempotency-Key: <uuid>` untuk request mutasi (`POST /commands/execute`, `POST /commands/sign`, `POST /schedules`, `PATCH /schedules/{id}`, `DELETE /schedules/{id}`)
+- `Idempotency-Key: <uuid>` untuk request mutasi (`POST /commands/execute`, `POST /schedules`, `PATCH /schedules/{id}`, `DELETE /schedules/{id}`)
 
 ### Mode Autentikasi Open Integration
 
@@ -374,7 +365,7 @@ Semua response JSON mengikuti envelope standar:
 # 7. Skema Database MariaDB (Revisi)
 
 Skema aktual berada di:
-- `backend/migrations-mariadb/0001_init.sql`
+- `backend/migrations-mariadb/0001_schema.sql`
 
 Entitas utama:
 - `users`, `auth_sessions`
@@ -398,20 +389,19 @@ Entitas utama:
 
 - Hanya backend dan ESP32 yang memakai credential broker.
 - Frontend tidak menerima kredensial broker.
-- Semua command wajib dipublish dari backend dalam bentuk signed envelope.
+- Semua command wajib dipublish dari backend.
 
 ## 8.3 Anti-Spoof dan Anti-Replay
 
-ESP32 wajib reject command jika:
-- signature tidak valid
-- `expiresAt` sudah lewat
-- `nonce` pernah dipakai sebelumnya dalam jendela waktu aktif
-- command schedule diperlakukan sama seperti command manual (wajib signature valid).
+Kontrol anti-spoof/replay pada fase ini:
+- command publish hanya lewat backend (frontend tidak memegang kredensial broker)
+- JWT + akses device diverifikasi sebelum publish
+- idempotency key mencegah replay request mutasi di sisi API
 
 ## 8.4 Secret Handling
 
-- JWT secret dan parameter HMAC disimpan di environment backend.
-- HMAC secret per-device disimpan di MariaDB dan tidak boleh diekspos ke frontend.
+- JWT secret disimpan di environment backend.
+- Kredensial MQTT hanya tersedia di backend/worker dan tidak diekspos ke frontend.
 
 ## 8.5 Password dan Rate Limit
 
@@ -489,7 +479,6 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 - Realtime update dashboard berjalan via SSE backend proxy.
 - Backend realtime proxy MQTT stabil pada Node runtime.
 - Runtime Worker tetap berfungsi dengan subscribe MQTT realtime + snapshot LWT.
-- Command tanpa signature ditolak di firmware.
 - Audit command tersimpan di MariaDB.
 - Scheduler otomatis ON/OFF berjalan stabil berbasis cron + timezone.
 - Open Integration API v1 tersedia dengan kontrak stabil dan endpoint discovery.
@@ -518,8 +507,6 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 
 - [x] Implement MQTT TLS connect + reconnect.
 - [x] Subscribe `home/{deviceId}/cmd` (profile native ESP32).
-- [x] Implement verifikasi signature HMAC command.
-- [x] Implement validasi expiry + nonce anti-replay.
 - [x] Publish `status` retained setelah setiap perubahan state.
 - [x] Konfigurasi LWT `ONLINE/OFFLINE`.
 
@@ -540,7 +527,6 @@ Catatan:
 - [x] Implement route v1 `POST /api/v1/auth/login` + JWT.
 - [x] Implement route v1 `POST /api/v1/auth/refresh` + refresh token rotation.
 - [x] Implement route v1 `GET /api/v1/bootstrap` (device list + realtime stream config).
-- [x] Implement route v1 `POST /api/v1/commands/sign`.
 - [x] Implement route v1 `POST /api/v1/commands/execute`.
 - [x] Implement route v1 `POST /api/v1/schedules`.
 - [x] Implement route v1 `GET /api/v1/schedules`.
@@ -602,8 +588,6 @@ Catatan:
 - [x] Login benar/salah.
 - [x] Token expired.
 - [x] User A tidak bisa execute command device User B.
-- [x] Signature tampered ditolak ESP32.
-- [x] Replay command ditolak (nonce/expiry).
 - [x] Device offline tampil realtime dari LWT.
 - [x] Reconnect dashboard: resubscribe + state sinkron.
 - [x] Uji paralel minimal 10 device.
@@ -634,9 +618,6 @@ Catatan verifikasi terakhir:
     - API execute latency: `3486 ms`
     - End-to-end request -> status ack observed: `7375 ms`
   - Catatan: status ack pada pengukuran latency memakai publisher simulasi MQTT (`source=latency-sim`) untuk mengukur jalur command -> broker -> status.
-- Verifikasi keamanan command envelope (17 February 2026):
-  - `scripts/verify-command-security.sh` -> `PASS`
-  - skenario yang diverifikasi: signature tampered, replay nonce, dan envelope expired ditolak oleh verifier simulation (selaras dengan logika firmware ESP32).
 - Demo free-tier (17 February 2026):
   - Cloudflare Worker single URL + D1 + HiveMQ Cloud free tier berjalan untuk login/dashboard/command/schedule.
   - Jalur status ack end-to-end untuk pengukuran otomatis menggunakan publisher simulasi (`latency-sim`) di topic MQTT.

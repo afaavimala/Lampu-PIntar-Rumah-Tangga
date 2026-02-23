@@ -1,10 +1,11 @@
-import { parseRealtimeMqttMessage, getRealtimeSubscribeTopics } from './mqtt-compat'
-import type { SignedCommandEnvelope } from './commands'
-import { publishCompatibleCommandOverWs } from './mqtt-command-publish'
+import { buildCommandPublishTargets, parseRealtimeMqttMessage, getRealtimeSubscribeTopics } from './mqtt-compat'
+import type { CommandDispatchEnvelope } from './commands'
 
 const CONNECT_PACKET_TYPE = 0x10
 const CONNACK_PACKET_TYPE = 0x20
 const PUBLISH_PACKET_TYPE = 0x30
+const PUBLISH_QOS1_PACKET_TYPE = 0x32
+const PUBACK_PACKET_TYPE = 0x40
 const SUBSCRIBE_PACKET_TYPE = 0x82
 const SUBACK_PACKET_TYPE = 0x90
 const PINGREQ_PACKET_TYPE = 0xc0
@@ -120,6 +121,25 @@ function buildSubscribePacket(packetId: number, topics: string[]) {
   return concat(new Uint8Array([SUBSCRIBE_PACKET_TYPE]), remainingLength, packetIdBytes, payload)
 }
 
+function buildPublishQos1Packet(input: {
+  topic: string
+  payload: string
+  packetId: number
+}) {
+  const topicBytes = encodeMqttString(input.topic)
+  const packetIdBytes = new Uint8Array([(input.packetId >> 8) & 0xff, input.packetId & 0xff])
+  const payloadBytes = new TextEncoder().encode(input.payload)
+  const remainingLength = encodeVarInt(topicBytes.length + packetIdBytes.length + payloadBytes.length)
+
+  return concat(
+    new Uint8Array([PUBLISH_QOS1_PACKET_TYPE]),
+    remainingLength,
+    topicBytes,
+    packetIdBytes,
+    payloadBytes,
+  )
+}
+
 async function toBytes(data: unknown): Promise<Uint8Array> {
   if (data instanceof Uint8Array) {
     return data
@@ -192,6 +212,11 @@ function readConnAckReturnCode(packet: Uint8Array) {
   return packet[3]
 }
 
+function readPubAckPacketId(packet: Uint8Array) {
+  if (packet.length < 4) return -1
+  return (packet[2] << 8) | packet[3]
+}
+
 function extractPublishPacket(packet: Uint8Array) {
   const decoded = decodeRemainingLength(packet)
   if (!decoded) {
@@ -240,6 +265,17 @@ export class RealtimeMqttProxy {
   private nextPacketIdValue = 1
   private latestStatusByDevice = new Map<string, { payload: Record<string, unknown>; ts: number }>()
   private latestLwtByDevice = new Map<string, { payload: string; ts: number }>()
+  private publishQueue = Promise.resolve()
+  private connectionWaiters = new Set<{
+    resolve: () => void
+    reject: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }>()
+  private pendingPublishAcks = new Map<number, {
+    resolve: () => void
+    reject: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }>()
 
   constructor(private readonly config: RealtimeProxyConfig) {}
 
@@ -252,6 +288,8 @@ export class RealtimeMqttProxy {
     this.stopped = true
     this.connected = false
     this.packetBuffer = new Uint8Array(0)
+    this.rejectConnectionWaiters(new Error('Realtime MQTT proxy stopped'))
+    this.rejectPendingPublishes(new Error('Realtime MQTT proxy stopped'))
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -312,13 +350,37 @@ export class RealtimeMqttProxy {
     }
   }
 
-  async publishSignedCommand(envelope: SignedCommandEnvelope) {
-    await publishCompatibleCommandOverWs({
-      url: this.config.url,
-      username: this.config.username,
-      password: this.config.password,
-      clientIdPrefix: this.config.clientIdPrefix,
-    }, envelope)
+  async publishCommand(envelope: CommandDispatchEnvelope) {
+    const targets = buildCommandPublishTargets({
+      deviceId: envelope.deviceId,
+      action: envelope.action,
+    })
+
+    const publishResults = await Promise.allSettled(
+      targets.map((target) => this.enqueuePublish(target.topic, target.payload)),
+    )
+
+    const errors: string[] = []
+    let succeeded = 0
+    for (let index = 0; index < publishResults.length; index += 1) {
+      const result = publishResults[index]
+      const target = targets[index]
+
+      if (result.status === 'fulfilled') {
+        succeeded += 1
+        continue
+      }
+
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      errors.push(`${target.topic}: ${message}`)
+    }
+
+    if (succeeded > 0) {
+      return
+    }
+
+    const details = errors.join('; ') || 'unknown publish error'
+    throw new Error(`Failed to publish command on all MQTT topic profiles (${details})`)
   }
 
   private ensureConnected() {
@@ -372,6 +434,7 @@ export class RealtimeMqttProxy {
             const returnCode = readConnAckReturnCode(packet)
             if (returnCode !== 0) {
               console.error(`[realtime-proxy] MQTT CONNACK rejected with code ${returnCode}`)
+              this.rejectConnectionWaiters(new Error(`MQTT CONNACK rejected with code ${returnCode}`))
               try {
                 ws.close()
               } catch {
@@ -385,10 +448,24 @@ export class RealtimeMqttProxy {
             clearTimeout(connAckTimeout)
             ws.send(buildSubscribePacket(this.nextPacketId(), getRealtimeSubscribeTopics()))
             this.startPing(ws)
+            this.resolveConnectionWaiters()
             continue
           }
 
           if (packetType === SUBACK_PACKET_TYPE || packetType === PINGRESP_PACKET_TYPE) {
+            continue
+          }
+
+          if (packetType === PUBACK_PACKET_TYPE) {
+            const packetId = readPubAckPacketId(packet)
+            const pending = this.pendingPublishAcks.get(packetId)
+            if (!pending) {
+              continue
+            }
+
+            this.pendingPublishAcks.delete(packetId)
+            clearTimeout(pending.timer)
+            pending.resolve()
             continue
           }
 
@@ -417,6 +494,8 @@ export class RealtimeMqttProxy {
     const cleanup = () => {
       clearTimeout(connAckTimeout)
       this.connected = false
+      this.rejectConnectionWaiters(new Error('Realtime MQTT connection closed'))
+      this.rejectPendingPublishes(new Error('Realtime MQTT connection closed'))
       if (this.ws === ws) {
         this.ws = null
       }
@@ -457,6 +536,146 @@ export class RealtimeMqttProxy {
     const id = this.nextPacketIdValue
     this.nextPacketIdValue = id >= 65_535 ? 1 : id + 1
     return id
+  }
+
+  private enqueuePublish(topic: string, payload: string, timeoutMs = 10_000) {
+    const run = async () => {
+      await this.publishOne(topic, payload, timeoutMs)
+    }
+
+    const task = this.publishQueue.then(run, run)
+    this.publishQueue = task.then(
+      () => undefined,
+      () => undefined,
+    )
+    return task
+  }
+
+  private async publishOne(topic: string, payload: string, timeoutMs: number) {
+    await this.waitUntilConnected(timeoutMs)
+
+    const ws = this.ws
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.connected) {
+      throw new Error('Realtime MQTT proxy is not connected')
+    }
+
+    const packetId = this.nextPacketId()
+    let pendingTimer: ReturnType<typeof setTimeout> | null = null
+
+    const ackPromise = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingPublishAcks.delete(packetId)
+        reject(new Error(`Timed out waiting MQTT PUBACK for ${topic}`))
+      }, timeoutMs)
+
+      pendingTimer = timer
+      this.pendingPublishAcks.set(packetId, {
+        resolve,
+        reject,
+        timer,
+      })
+    })
+
+    try {
+      ws.send(
+        buildPublishQos1Packet({
+          topic,
+          payload,
+          packetId,
+        }),
+      )
+    } catch (error) {
+      if (pendingTimer) {
+        this.pendingPublishAcks.delete(packetId)
+        clearTimeout(pendingTimer)
+      }
+
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to send MQTT publish packet (${message})`)
+    }
+
+    await ackPromise
+  }
+
+  private async waitUntilConnected(timeoutMs: number) {
+    if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return
+    }
+
+    this.ensureConnected()
+
+    await new Promise<void>((resolve, reject) => {
+      let waiter:
+        | {
+            resolve: () => void
+            reject: (error: Error) => void
+            timer: ReturnType<typeof setTimeout>
+          }
+        | null = null
+
+      const onResolve = () => {
+        if (!waiter) {
+          return
+        }
+        this.connectionWaiters.delete(waiter)
+        clearTimeout(waiter.timer)
+        resolve()
+      }
+
+      const onReject = (error: Error) => {
+        if (!waiter) {
+          return
+        }
+        this.connectionWaiters.delete(waiter)
+        clearTimeout(waiter.timer)
+        reject(error)
+      }
+
+      waiter = {
+        resolve: onResolve,
+        reject: onReject,
+        timer: setTimeout(() => {
+          if (!waiter) {
+            return
+          }
+          this.connectionWaiters.delete(waiter)
+          reject(new Error('Timed out waiting for realtime MQTT connection'))
+        }, timeoutMs),
+      }
+
+      this.connectionWaiters.add(waiter)
+
+      if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        onResolve()
+      }
+    })
+  }
+
+  private resolveConnectionWaiters() {
+    const waiters = Array.from(this.connectionWaiters)
+    this.connectionWaiters.clear()
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer)
+      waiter.resolve()
+    }
+  }
+
+  private rejectConnectionWaiters(error: Error) {
+    const waiters = Array.from(this.connectionWaiters)
+    this.connectionWaiters.clear()
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer)
+      waiter.reject(error)
+    }
+  }
+
+  private rejectPendingPublishes(error: Error) {
+    const pendingPublishes = Array.from(this.pendingPublishAcks.values())
+    this.pendingPublishAcks.clear()
+    for (const pending of pendingPublishes) {
+      clearTimeout(pending.timer)
+      pending.reject(error)
+    }
   }
 
   private emitEvent(event: RealtimeEvent) {

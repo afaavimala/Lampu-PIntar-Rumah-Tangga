@@ -17,8 +17,7 @@ openApiRoutes.get('/openapi.json', (c) => {
       '/api/v1/auth/refresh': { post: { summary: 'Refresh access token and rotate refresh session' } },
       '/api/v1/auth/logout': { post: { summary: 'Logout user' } },
       '/api/v1/bootstrap': { get: { summary: 'Bootstrap dashboard session' } },
-      '/api/v1/commands/sign': { post: { summary: 'Create signed command envelope' } },
-      '/api/v1/commands/execute': { post: { summary: 'Sign and publish command via backend proxy' } },
+      '/api/v1/commands/execute': { post: { summary: 'Publish command via backend proxy' } },
       '/api/v1/status': { get: { summary: 'Fallback status list' } },
       '/api/v1/realtime/stream': { get: { summary: 'Realtime stream (SSE proxy from backend)' } },
       '/api/v1/schedules': {
@@ -39,6 +38,9 @@ openApiRoutes.get('/openapi.json', (c) => {
       '/api/v1/devices': {
         get: { summary: 'List devices' },
         post: { summary: 'Create device and attach to current user' },
+      },
+      '/api/v1/devices/discovery': {
+        get: { summary: 'Scan broker topics and discover available Tasmota devices' },
       },
       '/api/v1/devices/{deviceId}': {
         get: { summary: 'Get device detail' },

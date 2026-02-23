@@ -1,3 +1,5 @@
+-- Consolidated D1 baseline schema (auth + rate limit + schedule enforcement window).
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
@@ -57,6 +59,31 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  rate_key TEXT PRIMARY KEY,
+  request_count INTEGER NOT NULL,
+  reset_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  refresh_token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_used_at INTEGER,
+  rotated_at INTEGER,
+  revoked_at INTEGER,
+  replaced_by_session_id INTEGER,
+  user_agent TEXT,
+  ip_address TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (replaced_by_session_id) REFERENCES auth_sessions(id)
+);
+
 CREATE TABLE IF NOT EXISTS device_schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -90,6 +117,57 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   FOREIGN KEY (device_id) REFERENCES devices(id)
 );
 
+-- Backward-compatible schedule enforcement columns.
+ALTER TABLE device_schedules ADD COLUMN window_group_id TEXT;
+ALTER TABLE device_schedules ADD COLUMN window_start_minute INTEGER;
+ALTER TABLE device_schedules ADD COLUMN window_end_minute INTEGER;
+ALTER TABLE device_schedules ADD COLUMN enforce_every_minute INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits (reset_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active ON auth_sessions (user_id, revoked_at, expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions (expires_at);
 CREATE INDEX IF NOT EXISTS idx_device_schedules_due ON device_schedules (enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_device_schedules_window_group ON device_schedules (window_group_id);
 CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule_id ON schedule_runs (schedule_id, planned_at);
 CREATE INDEX IF NOT EXISTS idx_command_logs_device ON command_logs (device_id, id DESC);
+
+-- Default admin credentials for local MVP:
+-- email: admin@example.com
+-- password: admin12345
+INSERT OR IGNORE INTO users (email, password_hash, created_at)
+VALUES (
+  'admin@example.com',
+  '$2b$12$pE5REBOZ19Ad.9CSB13J1O/n7nID3CKOq5dWd.XLOVlAHFLHEKTX.',
+  datetime('now')
+);
+
+INSERT OR IGNORE INTO devices (device_id, name, location, hmac_secret, created_at)
+VALUES (
+  'lampu-ruang-tamu',
+  'Lampu Ruang Tamu',
+  'Ruang Tamu',
+  'f43a301812844e47ab5908ebae902934fd3555cdc53f0da63df6fcb8a35bf98f',
+  datetime('now')
+);
+
+INSERT OR IGNORE INTO user_devices (user_id, device_id, role, created_at)
+SELECT u.id, d.id, 'owner', datetime('now')
+FROM users u
+JOIN devices d ON d.device_id = 'lampu-ruang-tamu'
+WHERE u.email = 'admin@example.com';
+
+-- Demo API key plaintext (for local testing only): demo-integration-key
+INSERT OR IGNORE INTO integration_clients (name, api_key_hash, scopes, is_active, created_at)
+VALUES (
+  'demo-client',
+  '10f752b000d239490916cb969f1a709cd4e3b359f51467adbaf20818cdcb3bfd',
+  'read,command,schedule',
+  1,
+  datetime('now')
+);
+
+-- Upgrade legacy seeded admin SHA-256 hash to bcrypt.
+UPDATE users
+SET password_hash = '$2b$12$pE5REBOZ19Ad.9CSB13J1O/n7nID3CKOq5dWd.XLOVlAHFLHEKTX.'
+WHERE email = 'admin@example.com'
+  AND password_hash = '41e5653fc7aeb894026d6bb7b2db7f65902b454945fa8fd65a6327047b5277fb';

@@ -4,6 +4,10 @@ type RealtimeHandlers = {
   onError: (error: Error) => void
 }
 
+type RealtimeClientOptions = {
+  streamPath?: string
+}
+
 type RealtimeEvent =
   | {
       type: 'status'
@@ -24,9 +28,17 @@ type RealtimeEvent =
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
-export function createRealtimeClient(deviceIds: string[], handlers: RealtimeHandlers) {
+export function createRealtimeClient(
+  deviceIds: string[],
+  handlers: RealtimeHandlers,
+  options: RealtimeClientOptions = {},
+) {
   const trackedDeviceIds = new Set(deviceIds)
-  const streamUrl = `${API_BASE}/api/v1/realtime/stream`
+  const streamPath = options.streamPath ?? '/api/v1/realtime/stream'
+  const streamUrl =
+    streamPath.startsWith('http://') || streamPath.startsWith('https://')
+      ? streamPath
+      : `${API_BASE}${streamPath}`
   const source = new EventSource(streamUrl, { withCredentials: true })
   let reportedError = false
 

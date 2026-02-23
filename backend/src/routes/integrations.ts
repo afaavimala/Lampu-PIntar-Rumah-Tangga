@@ -7,8 +7,57 @@ import { beginIdempotentRequest, persistIdempotentResponse } from '../lib/idempo
 import { buildSuccessEnvelope, fail, ok } from '../lib/response'
 import { listDevicesByPrincipal, resolveDeviceAccess } from '../lib/db'
 import { getBestStatusForDevice } from '../lib/status'
+import { readTasmotaDiscoveryOverWs } from '../lib/mqtt-ws'
 
 export const integrationRoutes = new Hono<AppEnv>()
+
+function readBoundedInt(
+  value: string | undefined,
+  fallback: number,
+  bounds: {
+    min: number
+    max: number
+  },
+) {
+  if (!value) {
+    return fallback
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  const rounded = Math.floor(parsed)
+  if (rounded < bounds.min) {
+    return bounds.min
+  }
+  if (rounded > bounds.max) {
+    return bounds.max
+  }
+  return rounded
+}
+
+function deriveSuggestedDeviceName(deviceId: string) {
+  const normalized = deviceId
+    .trim()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return 'Lampu Tasmota'
+  }
+
+  const words = normalized
+    .split(' ')
+    .map((word) => {
+      if (!word) return ''
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .filter(Boolean)
+  return words.join(' ')
+}
 
 const createDeviceSchema = z.object({
   deviceId: z
@@ -19,7 +68,6 @@ const createDeviceSchema = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
   name: z.string().trim().min(1).max(120),
   location: z.string().trim().max(120).optional(),
-  hmacSecret: z.string().trim().min(8).max(256).optional(),
 })
 
 integrationRoutes.get('/integrations/capabilities', requireAuth(['read']), async (c) => {
@@ -29,6 +77,7 @@ integrationRoutes.get('/integrations/capabilities', requireAuth(['read']), async
     endpoints: [
       '/api/v1/integrations/capabilities',
       '/api/v1/devices',
+      '/api/v1/devices/discovery',
       '/api/v1/devices/{deviceId}',
       '/api/v1/devices/{deviceId}/status',
       '/api/v1/schedules',
@@ -36,6 +85,63 @@ integrationRoutes.get('/integrations/capabilities', requireAuth(['read']), async
       '/api/v1/schedules/{scheduleId}/runs',
       '/api/v1/openapi.json',
     ],
+  })
+})
+
+integrationRoutes.get('/devices/discovery', requireAuth(['read']), async (c) => {
+  const principal = c.get('principal')
+  if (!principal) {
+    return fail(c, 'NOT_AUTHENTICATED', 'Authentication required', 401)
+  }
+
+  const waitMs = readBoundedInt(c.req.query('waitMs'), 1_200, { min: 300, max: 5_000 })
+  const maxDevices = readBoundedInt(c.req.query('maxDevices'), 200, { min: 1, max: 500 })
+
+  let discovered
+  try {
+    discovered = await readTasmotaDiscoveryOverWs({
+      url: c.env.MQTT_WS_URL,
+      username: c.env.MQTT_USERNAME,
+      password: c.env.MQTT_PASSWORD,
+      clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
+      snapshotWaitMs: waitMs,
+      maxDevices,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to scan Tasmota devices'
+    return fail(c, 'INTERNAL_ERROR', message, 502)
+  }
+
+  const [ownedDevices, allRegistered] = await Promise.all([
+    listDevicesByPrincipal(c.env.DB, principal),
+    c.env.DB.prepare('SELECT device_id FROM devices').all<{ device_id: string }>(),
+  ])
+
+  const ownedDeviceIds = new Set(ownedDevices.map((device) => device.device_id.toLowerCase()))
+  const registeredDeviceIds = new Set(allRegistered.results.map((row) => row.device_id.toLowerCase()))
+
+  const devices = discovered.map((item) => {
+    const key = item.deviceId.toLowerCase()
+    const alreadyLinked = ownedDeviceIds.has(key)
+    const alreadyRegistered = registeredDeviceIds.has(key)
+
+    return {
+      deviceId: item.deviceId,
+      online: item.online,
+      power: item.power,
+      sources: item.sources,
+      lastSeenAt: new Date(item.lastSeenAt).toISOString(),
+      suggestedName: deriveSuggestedDeviceName(item.deviceId),
+      alreadyLinked,
+      alreadyRegistered,
+    }
+  })
+
+  return ok(c, {
+    scannedAt: new Date().toISOString(),
+    waitMs,
+    maxDevices,
+    devices,
   })
 })
 
@@ -71,24 +177,14 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
 
   const nowIso = new Date().toISOString()
   const normalizedLocation = parsed.data.location?.trim() ? parsed.data.location.trim() : null
-  const normalizedSecret = parsed.data.hmacSecret?.trim()
-  const fallbackSecret = c.env.HMAC_GLOBAL_FALLBACK_SECRET?.trim()
-  const resolvedSecret = normalizedSecret || fallbackSecret
-  if (!resolvedSecret) {
-    return fail(
-      c,
-      'VALIDATION_ERROR',
-      'HMAC secret wajib diisi jika HMAC_GLOBAL_FALLBACK_SECRET belum dikonfigurasi',
-      400,
-    )
-  }
+  const legacySecretPlaceholder = 'unused-tasmota'
 
   const createdDevice = await c.env.DB
     .prepare(
       `INSERT INTO devices (device_id, name, location, hmac_secret, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     )
-    .bind(parsed.data.deviceId, parsed.data.name, normalizedLocation, resolvedSecret, nowIso)
+    .bind(parsed.data.deviceId, parsed.data.name, normalizedLocation, legacySecretPlaceholder, nowIso)
     .run()
 
   const deviceInternalId = Number(createdDevice.meta.last_row_id)

@@ -50,8 +50,7 @@ Tanggal verifikasi:
    - token refresh terbaru tetap valid: `PASS`.
 8. Verifikasi paralel 10 device (`scripts/verify-parallel-devices.sh`, cloud): `PASS` (`OK: 10`, `FAIL: 0`).
 9. Pengukuran latency command -> status ack (`scripts/measure-status-ack-latency.sh`, cloud simulasi status): `PASS` (tercatat nilai ms).
-10. Verifikasi keamanan command envelope (`scripts/verify-command-security.sh`): `PASS` (tampered/replay/expired ditolak).
-11. Verifikasi test kompatibilitas MQTT Tasmota (`npm --prefix backend test`): `PASS` (`mqtt-compat.test.ts`, `mqtt-command-publish.test.ts`).
+10. Verifikasi test kompatibilitas MQTT Tasmota (`npm --prefix backend test`): `PASS` (`mqtt-compat.test.ts`, `mqtt-command-publish.test.ts`).
 
 ## Evidence
 

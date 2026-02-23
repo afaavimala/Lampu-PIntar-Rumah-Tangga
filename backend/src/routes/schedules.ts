@@ -16,6 +16,10 @@ const createScheduleSchema = z.object({
   enabled: z.boolean().optional().default(true),
   startAt: z.string().datetime().optional(),
   endAt: z.string().datetime().optional(),
+  windowGroupId: z.string().min(1).max(191).optional(),
+  windowStartMinute: z.number().int().min(0).max(1439).optional(),
+  windowEndMinute: z.number().int().min(0).max(1439).optional(),
+  enforceEveryMinute: z.number().int().min(1).max(1440).optional(),
 })
 
 const patchScheduleSchema = z.object({
@@ -25,9 +29,49 @@ const patchScheduleSchema = z.object({
   enabled: z.boolean().optional(),
   startAt: z.string().datetime().nullable().optional(),
   endAt: z.string().datetime().nullable().optional(),
+  windowGroupId: z.string().min(1).max(191).nullable().optional(),
+  windowStartMinute: z.number().int().min(0).max(1439).nullable().optional(),
+  windowEndMinute: z.number().int().min(0).max(1439).nullable().optional(),
+  enforceEveryMinute: z.number().int().min(1).max(1440).nullable().optional(),
 })
 
 export const scheduleRoutes = new Hono<AppEnv>()
+
+function normalizeWindowConfig(input: {
+  windowGroupId: string | null | undefined
+  windowStartMinute: number | null | undefined
+  windowEndMinute: number | null | undefined
+  enforceEveryMinute: number | null | undefined
+}) {
+  const values = [input.windowGroupId, input.windowStartMinute, input.windowEndMinute, input.enforceEveryMinute]
+  const providedCount = values.filter((value) => value != null).length
+
+  if (providedCount === 0) {
+    return {
+      ok: true as const,
+      value: {
+        windowGroupId: null as string | null,
+        windowStartMinute: null as number | null,
+        windowEndMinute: null as number | null,
+        enforceEveryMinute: null as number | null,
+      },
+    }
+  }
+
+  if (providedCount !== 4) {
+    return { ok: false as const, code: 'SCHEDULE_WINDOW_CONFIG_INCOMPLETE' }
+  }
+
+  return {
+    ok: true as const,
+    value: {
+      windowGroupId: String(input.windowGroupId),
+      windowStartMinute: Number(input.windowStartMinute),
+      windowEndMinute: Number(input.windowEndMinute),
+      enforceEveryMinute: Number(input.enforceEveryMinute),
+    },
+  }
+}
 
 scheduleRoutes.get('/', requireAuth(['read']), async (c) => {
   const principal = c.get('principal')
@@ -41,6 +85,7 @@ scheduleRoutes.get('/', requireAuth(['read']), async (c) => {
       .prepare(
         `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
                 ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
+                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
                 ds.created_at, ds.updated_at, d.device_id
          FROM device_schedules ds
          INNER JOIN devices d ON d.id = ds.device_id
@@ -54,6 +99,7 @@ scheduleRoutes.get('/', requireAuth(['read']), async (c) => {
       .prepare(
         `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
                 ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
+                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
                 ds.created_at, ds.updated_at, d.device_id
          FROM device_schedules ds
          INNER JOIN devices d ON d.id = ds.device_id
@@ -138,12 +184,25 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
     )
   }
 
+  const windowConfig = normalizeWindowConfig({
+    windowGroupId: parsed.data.windowGroupId,
+    windowStartMinute: parsed.data.windowStartMinute,
+    windowEndMinute: parsed.data.windowEndMinute,
+    enforceEveryMinute: parsed.data.enforceEveryMinute,
+  })
+  if (!windowConfig.ok) {
+    return fail(c, 'VALIDATION_ERROR', 'Window enforcement config must be set completely', 400, {
+      code: windowConfig.code,
+    })
+  }
+
   const nowIso = new Date().toISOString()
   const created = await c.env.DB
     .prepare(
       `INSERT INTO device_schedules
-       (user_id, device_id, action, cron_expr, timezone, enabled, next_run_at, last_run_at, start_at, end_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+       (user_id, device_id, action, cron_expr, timezone, enabled, next_run_at, last_run_at, start_at, end_at,
+        window_group_id, window_start_minute, window_end_minute, enforce_every_minute, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       principal.userId,
@@ -155,6 +214,10 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
       nextRunAt,
       parsed.data.startAt ? new Date(parsed.data.startAt).getTime() : null,
       parsed.data.endAt ? new Date(parsed.data.endAt).getTime() : null,
+      windowConfig.value.windowGroupId,
+      windowConfig.value.windowStartMinute,
+      windowConfig.value.windowEndMinute,
+      windowConfig.value.enforceEveryMinute,
       nowIso,
       nowIso,
     )
@@ -238,11 +301,33 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
         ? null
         : new Date(parsed.data.endAt).getTime()
 
+  const resolvedWindowGroupId =
+    parsed.data.windowGroupId === undefined ? current.window_group_id : parsed.data.windowGroupId
+  const resolvedWindowStartMinute =
+    parsed.data.windowStartMinute === undefined ? current.window_start_minute : parsed.data.windowStartMinute
+  const resolvedWindowEndMinute =
+    parsed.data.windowEndMinute === undefined ? current.window_end_minute : parsed.data.windowEndMinute
+  const resolvedEnforceEveryMinute =
+    parsed.data.enforceEveryMinute === undefined ? current.enforce_every_minute : parsed.data.enforceEveryMinute
+
+  const windowConfig = normalizeWindowConfig({
+    windowGroupId: resolvedWindowGroupId == null ? null : String(resolvedWindowGroupId),
+    windowStartMinute: resolvedWindowStartMinute == null ? null : Number(resolvedWindowStartMinute),
+    windowEndMinute: resolvedWindowEndMinute == null ? null : Number(resolvedWindowEndMinute),
+    enforceEveryMinute: resolvedEnforceEveryMinute == null ? null : Number(resolvedEnforceEveryMinute),
+  })
+  if (!windowConfig.ok) {
+    return fail(c, 'VALIDATION_ERROR', 'Window enforcement config must be set completely', 400, {
+      code: windowConfig.code,
+    })
+  }
+
   await c.env.DB
     .prepare(
       `UPDATE device_schedules
        SET action = ?, cron_expr = ?, timezone = ?, enabled = ?, next_run_at = ?,
-           start_at = ?, end_at = ?, updated_at = ?
+           start_at = ?, end_at = ?, window_group_id = ?, window_start_minute = ?,
+           window_end_minute = ?, enforce_every_minute = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`,
     )
     .bind(
@@ -253,6 +338,10 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
       nextRunAt,
       startAtValue,
       endAtValue,
+      windowConfig.value.windowGroupId,
+      windowConfig.value.windowStartMinute,
+      windowConfig.value.windowEndMinute,
+      windowConfig.value.enforceEveryMinute,
       new Date().toISOString(),
       scheduleId,
       principal.userId,
@@ -354,6 +443,7 @@ async function findScheduleById(db: D1Database, principal: AppEnv['Variables']['
       .prepare(
         `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
                 ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
+                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
                 ds.created_at, ds.updated_at, d.device_id
          FROM device_schedules ds
          INNER JOIN devices d ON d.id = ds.device_id
@@ -368,6 +458,7 @@ async function findScheduleById(db: D1Database, principal: AppEnv['Variables']['
     .prepare(
       `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
               ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
+              ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
               ds.created_at, ds.updated_at, d.device_id
        FROM device_schedules ds
        INNER JOIN devices d ON d.id = ds.device_id
@@ -391,6 +482,10 @@ function toScheduleDto(row: Record<string, unknown>) {
     lastRunAt: row.last_run_at == null ? null : Number(row.last_run_at),
     startAt: row.start_at == null ? null : Number(row.start_at),
     endAt: row.end_at == null ? null : Number(row.end_at),
+    windowGroupId: row.window_group_id == null ? null : String(row.window_group_id),
+    windowStartMinute: row.window_start_minute == null ? null : Number(row.window_start_minute),
+    windowEndMinute: row.window_end_minute == null ? null : Number(row.window_end_minute),
+    enforceEveryMinute: row.enforce_every_minute == null ? null : Number(row.enforce_every_minute),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   }
