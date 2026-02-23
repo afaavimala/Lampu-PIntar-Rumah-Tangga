@@ -58,26 +58,31 @@ body::before {
 .login-screen {
   display: grid;
   place-items: center;
-  gap: 1.65rem;
-  padding: 2.25rem 1.25rem;
+  padding: 1.58rem 0.88rem;
+}
+
+.login-shell {
+  width: min(455px, 100%);
+  display: grid;
+  gap: 1.15rem;
 }
 
 .login-brand {
   display: grid;
   justify-items: center;
-  gap: 0.35rem;
+  gap: 0.24rem;
 }
 
 .brand-bulb {
-  width: 82px;
-  height: 82px;
+  width: 57px;
+  height: 57px;
   color: #d8ecff;
   filter: drop-shadow(0 0 16px rgba(89, 181, 255, 0.75));
 }
 
 .login-brand h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-size: clamp(1.54rem, 2.8vw, 2.38rem);
   font-weight: 700;
   letter-spacing: 0.01em;
   color: #f4f8ff;
@@ -88,10 +93,10 @@ body::before {
 }
 
 .login-panel {
-  width: min(650px, 100%);
-  border-radius: 28px;
+  width: 100%;
+  border-radius: 20px;
   border: 1px solid var(--line-glass);
-  padding: 2.25rem 2.1rem 1.9rem;
+  padding: 1.58rem 1.47rem 1.33rem;
   background:
     linear-gradient(160deg, rgba(112, 160, 255, 0.2), rgba(13, 28, 99, 0.62) 52%, rgba(5, 18, 77, 0.74)),
     rgba(12, 26, 96, 0.6);
@@ -103,26 +108,26 @@ body::before {
 
 .login-form-blue {
   display: grid;
-  gap: 1.06rem;
+  gap: 0.74rem;
 }
 
 .field-block {
   display: grid;
-  gap: 0.62rem;
+  gap: 0.43rem;
 }
 
 .field-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  font-size: 2rem;
+  gap: 0.38rem;
+  font-size: 1.4rem;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
 .field-title-icon {
-  width: 2rem;
-  height: 2rem;
+  width: 1.4rem;
+  height: 1.4rem;
   color: #c7ddff;
 }
 
@@ -134,22 +139,22 @@ body::before {
 
 .field-input-icon {
   position: absolute;
-  left: 1.1rem;
-  width: 2rem;
-  height: 2rem;
+  left: 0.77rem;
+  width: 1.4rem;
+  height: 1.4rem;
   color: #c0d8ff;
 }
 
 .field-input-wrap input {
   width: 100%;
-  height: 74px;
-  border-radius: 14px;
+  height: 52px;
+  border-radius: 10px;
   border: 1px solid rgba(156, 194, 255, 0.52);
   outline: none;
   background: linear-gradient(160deg, rgba(32, 63, 151, 0.34), rgba(11, 26, 95, 0.82));
   color: #edf5ff;
-  padding: 0 4.8rem 0 4.3rem;
-  font: 600 2rem/1 'Manrope', 'Segoe UI', sans-serif;
+  padding: 0 3.36rem 0 3.01rem;
+  font: 600 1.4rem/1 'Manrope', 'Segoe UI', sans-serif;
   letter-spacing: 0.01em;
 }
 
@@ -164,9 +169,9 @@ body::before {
 
 .eye-button {
   position: absolute;
-  right: 0.85rem;
-  width: 54px;
-  height: 54px;
+  right: 0.6rem;
+  width: 38px;
+  height: 38px;
   border: 0;
   padding: 0;
   border-radius: 50%;
@@ -176,24 +181,24 @@ body::before {
 }
 
 .eye-icon {
-  width: 38px;
-  height: 38px;
+  width: 27px;
+  height: 27px;
 }
 
 .remember-row {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
-  margin-top: 0.25rem;
-  font-size: 2rem;
+  gap: 0.5rem;
+  margin-top: 0.18rem;
+  font-size: 1.4rem;
   color: #d7e4ff;
   font-weight: 500;
 }
 
 .remember-row input[type='checkbox'] {
   appearance: none;
-  width: 2rem;
-  height: 2rem;
+  width: 1.4rem;
+  height: 1.4rem;
   border-radius: 6px;
   border: 1px solid rgba(156, 194, 255, 0.52);
   background: rgba(8, 23, 89, 0.76);
@@ -208,13 +213,13 @@ body::before {
 }
 
 .login-button {
-  margin-top: 0.38rem;
+  margin-top: 0.27rem;
   border: 1px solid rgba(143, 212, 255, 0.55);
-  border-radius: 14px;
-  height: 76px;
+  border-radius: 10px;
+  height: 53px;
   background: linear-gradient(92deg, #0d48ee, #46bcff 48%, #0d48ee 100%);
   color: #f4f9ff;
-  font: 800 2.95rem/1 'Manrope', 'Segoe UI', sans-serif;
+  font: 800 2.07rem/1 'Manrope', 'Segoe UI', sans-serif;
   letter-spacing: 0.03em;
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(7, 24, 96, 0.42);
@@ -226,18 +231,18 @@ body::before {
 }
 
 .forgot-line {
-  margin: 0.7rem 0 0;
+  margin: 0.49rem 0 0;
   display: flex;
   align-items: center;
-  gap: 1.15rem;
+  gap: 0.8rem;
   color: #7ec9ff;
-  font-size: 1.85rem;
+  font-size: 1.3rem;
   justify-content: center;
 }
 
 .forgot-line span {
   flex: 1;
-  max-width: 170px;
+  max-width: 119px;
   height: 1px;
   background: rgba(169, 200, 255, 0.38);
 }
@@ -249,9 +254,9 @@ body::before {
 }
 
 .register-line {
-  margin: 0.28rem 0 0;
+  margin: 0.2rem 0 0;
   text-align: center;
-  font-size: 1.85rem;
+  font-size: 1.3rem;
   color: #cfdfff;
 }
 
@@ -264,7 +269,7 @@ body::before {
 .error {
   margin: 0;
   color: #ff9b9b;
-  font-size: 1.1rem;
+  font-size: 0.77rem;
   font-weight: 700;
 }
 
@@ -1277,69 +1282,72 @@ body::before {
   }
 
   .login-screen {
-    padding: 1.6rem 0.85rem;
-    gap: 1.1rem;
+    padding: 1.12rem 0.6rem;
+  }
+
+  .login-shell {
+    gap: 0.77rem;
   }
 
   .brand-bulb {
-    width: 58px;
-    height: 58px;
+    width: 41px;
+    height: 41px;
   }
 
   .login-brand h1 {
-    font-size: clamp(2.05rem, 8vw, 2.5rem);
+    font-size: clamp(1.44rem, 5.6vw, 1.75rem);
   }
 
   .login-panel {
-    border-radius: 20px;
-    padding: 1.22rem 1rem 1rem;
+    border-radius: 14px;
+    padding: 0.85rem 0.7rem 0.7rem;
   }
 
   .field-title {
-    font-size: clamp(1.26rem, 5vw, 1.5rem);
+    font-size: clamp(0.88rem, 3.5vw, 1.05rem);
   }
 
   .field-title-icon,
   .field-input-icon {
-    width: 1.35rem;
-    height: 1.35rem;
+    width: 0.95rem;
+    height: 0.95rem;
   }
 
   .field-input-wrap input {
-    height: 54px;
+    height: 38px;
     border-radius: 12px;
-    font-size: 1.35rem;
-    padding-left: 3rem;
-    padding-right: 3.4rem;
+    font-size: 0.95rem;
+    padding-left: 2.1rem;
+    padding-right: 2.38rem;
   }
 
   .eye-button {
-    width: 40px;
-    height: 40px;
+    width: 28px;
+    height: 28px;
   }
 
   .eye-icon {
-    width: 30px;
-    height: 30px;
+    width: 21px;
+    height: 21px;
   }
 
   .remember-row {
-    font-size: 1.35rem;
+    font-size: 0.95rem;
   }
 
   .remember-row input[type='checkbox'] {
-    width: 1.3rem;
-    height: 1.3rem;
+    width: 0.91rem;
+    height: 0.91rem;
   }
 
   .login-button {
-    height: 58px;
-    font-size: 2rem;
+    height: 41px;
+    font-size: 1.4rem;
   }
 
   .forgot-line,
   .register-line {
-    font-size: 1.2rem;
+    font-size: 0.84rem;
   }
 }
 
