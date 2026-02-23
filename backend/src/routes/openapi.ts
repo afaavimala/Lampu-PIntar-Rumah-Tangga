@@ -44,6 +44,8 @@ openApiRoutes.get('/openapi.json', (c) => {
       },
       '/api/v1/devices/{deviceId}': {
         get: { summary: 'Get device detail' },
+        patch: { summary: 'Update device profile (name/location/command channel)' },
+        delete: { summary: 'Detach device from current user and disable user schedules for it' },
       },
       '/api/v1/devices/{deviceId}/status': {
         get: { summary: 'Get fallback status for a device' },

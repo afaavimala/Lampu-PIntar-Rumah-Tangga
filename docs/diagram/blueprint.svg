@@ -222,25 +222,21 @@
   <rect x="1930" y="670" width="710" height="570" class="nodeData"/>
   <text x="1960" y="710" class="nodeTitle">MQTT Contract (Implemented)</text>
   <text x="1960" y="738" class="nodeTextSmall">Publish command targets:</text>
-  <text x="1960" y="762" class="nodeTextSmall">- home/{deviceId}/cmd (native SmartLamp envelope)</text>
-  <text x="1960" y="786" class="nodeTextSmall">- cmnd/{deviceId}/POWER (Tasmota)</text>
-  <text x="1960" y="810" class="nodeTextSmall">- {deviceId}/cmnd/POWER (FullTopic variant)</text>
+  <text x="1960" y="762" class="nodeTextSmall">- cmnd/{deviceId}/POWER (Tasmota canonical)</text>
   <text x="1960" y="846" class="nodeTextSmall">Subscribe realtime targets:</text>
-  <text x="1960" y="870" class="nodeTextSmall">- home/+/status, home/+/lwt</text>
-  <text x="1960" y="894" class="nodeTextSmall">- stat/+/POWER(1..8), stat/+/RESULT</text>
-  <text x="1960" y="918" class="nodeTextSmall">- tele/+/STATE, tele/+/LWT</text>
-  <text x="1960" y="942" class="nodeTextSmall">- +/stat/* and +/tele/* (FullTopic order)</text>
+  <text x="1960" y="870" class="nodeTextSmall">- stat/+/POWER(1..8), stat/+/RESULT</text>
+  <text x="1960" y="894" class="nodeTextSmall">- tele/+/STATE, tele/+/LWT</text>
+  <text x="1960" y="918" class="nodeTextSmall">- +/stat/* and +/tele/* (FullTopic order)</text>
   <text x="1960" y="978" class="nodeTextSmall">LWT snapshot helper:</text>
-  <text x="1960" y="1002" class="nodeTextSmall">- home/{deviceId}/lwt</text>
-  <text x="1960" y="1026" class="nodeTextSmall">- tele/{deviceId}/LWT and {deviceId}/tele/LWT</text>
+  <text x="1960" y="1002" class="nodeTextSmall">- tele/{deviceId}/LWT and {deviceId}/tele/LWT</text>
   <text x="1960" y="1060" class="nodeTextSmall">Source of truth: backend/src/lib/mqtt-compat.ts</text>
 
   <rect x="3270" y="240" width="1160" height="230" class="nodeEdge"/>
   <text x="3300" y="280" class="nodeTitle">ESP32 SmartLamp Firmware</text>
-  <text x="3300" y="308" class="nodeText">Subscribe native topic home/{deviceId}/cmd</text>
+  <text x="3300" y="308" class="nodeText">Consume command topic cmnd/{topic}/POWER</text>
   <text x="3300" y="332" class="nodeText">Execute POWER command + publish status/LWT</text>
   <text x="3300" y="356" class="nodeText">Execute relay ON/OFF</text>
-  <text x="3300" y="380" class="nodeText">Publish home/{deviceId}/status + home/{deviceId}/lwt</text>
+  <text x="3300" y="380" class="nodeText">Publish stat/{topic}/POWER|RESULT + tele/{topic}/LWT</text>
   <text x="3300" y="404" class="nodeText">Clock sync via NTP for expiry validation</text>
 
   <rect x="3270" y="500" width="1160" height="220" class="nodeEdge"/>
@@ -320,8 +316,8 @@
 
   <rect x="70" y="1320" width="4430" height="300" class="node"/>
   <text x="96" y="1364" class="nodeTitle">Command + Feedback Flow (Actual Implementation)</text>
-  <text x="96" y="1392" class="nodeTextSmall">1) Dashboard POST /api/v1/commands/execute -> 2) Hono validates ACL + signs envelope -> 3) Publish ke home/cmd + cmnd/POWER + {deviceId}/cmnd/POWER</text>
-  <text x="96" y="1418" class="nodeTextSmall">4) Device executes POWER -> 5) Device publish status/lwt ke broker (home atau stat/tele)</text>
+  <text x="96" y="1392" class="nodeTextSmall">1) Dashboard POST /api/v1/commands/execute -> 2) Hono validates ACL -> 3) Publish ke cmnd/{deviceId}/POWER</text>
+  <text x="96" y="1418" class="nodeTextSmall">4) Device executes POWER -> 5) Device publish status/lwt ke broker (stat/tele)</text>
   <text x="96" y="1444" class="nodeTextSmall">6) Backend realtime path ingest event MQTT -> emit SSE status/lwt -> dashboard auto update (Node proxy / Worker per-stream subscribe).</text>
   <text x="96" y="1476" class="legendText">Legend:</text>
   <line x1="172" y1="1472" x2="242" y2="1472" class="mainLink"/>

@@ -1,12 +1,22 @@
-import { useState } from 'react'
-import type { DiscoveredDevice } from '../lib/types'
+import { useEffect, useRef, useState } from 'react'
+import type { Device, DiscoveredDevice } from '../lib/types'
 
 type DeviceManagerProps = {
   onCreateDevice: (input: {
     deviceId: string
     name: string
     location?: string
+    commandChannel?: string
   }) => Promise<void>
+  onUpdateDevice: (input: {
+    deviceId: string
+    name: string
+    location?: string
+    commandChannel?: string
+  }) => Promise<void>
+  onCancelEdit: () => void
+  editingDevice: Device | null
+  editFocusNonce?: number
   onDiscover: () => Promise<void>
   onClaimDiscovered: (device: DiscoveredDevice) => Promise<void>
   discoveredDevices: DiscoveredDevice[]
@@ -40,6 +50,10 @@ function formatDateTime(value: string | null | undefined) {
 
 export function DeviceManager({
   onCreateDevice,
+  onUpdateDevice,
+  onCancelEdit,
+  editingDevice,
+  editFocusNonce = 0,
   onDiscover,
   onClaimDiscovered,
   discoveredDevices,
@@ -49,28 +63,78 @@ export function DeviceManager({
   discoveryWaitMs = null,
   busy = false,
 }: DeviceManagerProps) {
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const nameInputRef = useRef<HTMLInputElement | null>(null)
   const [deviceId, setDeviceId] = useState('')
   const [name, setName] = useState('')
   const [location, setLocation] = useState('')
+  const [commandChannel, setCommandChannel] = useState('POWER')
   const [submitting, setSubmitting] = useState(false)
+  const isEditing = !!editingDevice
+
+  useEffect(() => {
+    if (!editingDevice) {
+      setDeviceId('')
+      setName('')
+      setLocation('')
+      setCommandChannel('POWER')
+      return
+    }
+
+    setDeviceId(editingDevice.id)
+    setName(editingDevice.name)
+    setLocation(editingDevice.location ?? '')
+    setCommandChannel(editingDevice.commandChannel || 'POWER')
+  }, [editingDevice])
+
+  useEffect(() => {
+    if (!editingDevice) {
+      return
+    }
+
+    sectionRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+
+    const timerId = window.setTimeout(() => {
+      nameInputRef.current?.focus()
+      nameInputRef.current?.select()
+    }, 180)
+
+    return () => window.clearTimeout(timerId)
+  }, [editingDevice, editFocusNonce])
 
   return (
-    <section className="device-create">
-      <h3>Tambah Device</h3>
+    <section ref={sectionRef} className="device-create">
+      <h3>{isEditing ? 'Edit Device' : 'Tambah Device'}</h3>
       <form
         className="device-create-form"
         onSubmit={async (event) => {
           event.preventDefault()
           setSubmitting(true)
           try {
-            await onCreateDevice({
-              deviceId: deviceId.trim(),
+            const payload = {
               name: name.trim(),
               location: location.trim() || undefined,
-            })
-            setDeviceId('')
-            setName('')
-            setLocation('')
+              commandChannel: commandChannel.trim() || undefined,
+            }
+
+            if (editingDevice) {
+              await onUpdateDevice({
+                deviceId: editingDevice.id,
+                ...payload,
+              })
+            } else {
+              await onCreateDevice({
+                deviceId: deviceId.trim(),
+                ...payload,
+              })
+              setDeviceId('')
+              setName('')
+              setLocation('')
+              setCommandChannel('POWER')
+            }
           } finally {
             setSubmitting(false)
           }
@@ -83,12 +147,13 @@ export function DeviceManager({
             onChange={(event) => setDeviceId(event.target.value)}
             placeholder="contoh: lampu-teras"
             required
-            disabled={busy || submitting}
+            disabled={busy || submitting || isEditing}
           />
         </label>
         <label>
           Nama Device
           <input
+            ref={nameInputRef}
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="contoh: Lampu Teras"
@@ -105,12 +170,39 @@ export function DeviceManager({
             disabled={busy || submitting}
           />
         </label>
-        <button type="submit" disabled={busy || submitting}>
-          {submitting ? 'Menyimpan...' : 'Tambah Device'}
-        </button>
+        <label>
+          Channel Command (opsional)
+          <input
+            value={commandChannel}
+            onChange={(event) => setCommandChannel(event.target.value)}
+            placeholder="default: POWER (contoh: POWER2)"
+            disabled={busy || submitting}
+          />
+        </label>
+        {isEditing ? (
+          <div className="device-form-actions">
+            <button type="submit" disabled={busy || submitting}>
+              {submitting ? 'Menyimpan...' : 'Simpan'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || submitting}
+              onClick={() => {
+                onCancelEdit()
+              }}
+            >
+              Batal
+            </button>
+          </div>
+        ) : (
+          <button type="submit" disabled={busy || submitting}>
+            {submitting ? 'Menyimpan...' : 'Tambah Device'}
+          </button>
+        )}
       </form>
       <p className="small">
-        Topic command Tasmota: cmnd/&lt;deviceId&gt;/POWER (juga kompatibel dengan &lt;deviceId&gt;/cmnd/POWER)
+        Topic command Tasmota: cmnd/&lt;deviceId&gt;/&lt;commandChannel&gt; (default: POWER)
       </p>
 
       <section className="device-discovery">

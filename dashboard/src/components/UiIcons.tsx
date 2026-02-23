@@ -73,3 +73,25 @@ export function WifiIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function EditIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        d="M15.7 3.5a2.5 2.5 0 0 1 3.6 0l1.2 1.2a2.5 2.5 0 0 1 0 3.6L10.1 18.7a1 1 0 0 1-.5.3l-4.5 1.1a1 1 0 0 1-1.2-1.2L5 14.4a1 1 0 0 1 .3-.5L15.7 3.5Zm2.2 1.4a.5.5 0 0 0-.7 0l-1.1 1.1 1.9 1.9 1.1-1.1a.5.5 0 0 0 0-.7L17.9 4.9ZM16.6 9.3l-1.9-1.9-7.8 7.8-.6 2.5 2.5-.6 7.8-7.8Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+export function DeleteIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        d="M9 3a2 2 0 0 0-2 2v1H4.5a1 1 0 1 0 0 2H6l.9 11a2.5 2.5 0 0 0 2.5 2.3h5.2a2.5 2.5 0 0 0 2.5-2.3L18 8h1.5a1 1 0 1 0 0-2H17V5a2 2 0 0 0-2-2H9Zm6 3H9V5h6v1Zm-6 4a1 1 0 1 1 2 0v7a1 1 0 1 1-2 0v-7Zm4 0a1 1 0 1 1 2 0v7a1 1 0 1 1-2 0v-7Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}

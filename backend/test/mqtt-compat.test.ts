@@ -20,9 +20,21 @@ describe('mqtt compatibility helpers', () => {
 
     expect(targets.map((target) => target.topic)).toEqual([
       'cmnd/lampu-teras/POWER',
-      'lampu-teras/cmnd/POWER',
     ])
-    expect(targets.map((target) => target.payload)).toEqual(['ON', 'ON'])
+    expect(targets.map((target) => target.payload)).toEqual(['ON'])
+  })
+
+  it('builds command topic using provided tasmota channel', () => {
+    const targets = buildCommandPublishTargets({
+      deviceId: 'lampu-teras',
+      action: 'OFF',
+      commandChannel: 'power2',
+    })
+
+    expect(targets.map((target) => target.topic)).toEqual([
+      'cmnd/lampu-teras/POWER2',
+    ])
+    expect(targets.map((target) => target.payload)).toEqual(['OFF'])
   })
 
   it('parses tasmota stat power and result/state payloads', () => {

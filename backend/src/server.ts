@@ -5,6 +5,7 @@ import { createApp } from './app'
 import { createMariaDatabase, createMariaPool } from './lib/mariadb-d1'
 import { loadServerRuntimeConfig } from './lib/runtime-env'
 import { runDueSchedules } from './lib/scheduler-runner'
+import { createLocalMqttGatewayNamespace } from './lib/mqtt-gateway-local-namespace'
 import { initializeRealtimeMqttProxy, shutdownRealtimeMqttProxy } from './lib/realtime-mqtt-proxy'
 import type { EnvBindings } from './types/app'
 
@@ -82,6 +83,7 @@ async function main() {
     DB: db,
     ...config.bindings,
   }
+  bindings.MQTT_GATEWAY = createLocalMqttGatewayNamespace(bindings)
 
   initializeRealtimeMqttProxy({
     url: config.bindings.MQTT_WS_URL,

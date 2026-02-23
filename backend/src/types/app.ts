@@ -4,9 +4,19 @@ type WorkerAssetsBinding = {
   fetch: (request: Request) => Promise<Response>
 }
 
+type DurableObjectStubBinding = {
+  fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+}
+
+type DurableObjectNamespaceBinding = {
+  idFromName: (name: string) => unknown
+  get: (id: unknown) => DurableObjectStubBinding
+}
+
 export type EnvBindings = {
   DB: AppDatabase
   ASSETS?: WorkerAssetsBinding
+  MQTT_GATEWAY?: DurableObjectNamespaceBinding
   JWT_SECRET: string
   MQTT_WS_URL: string
   MQTT_USERNAME?: string
@@ -77,4 +87,5 @@ export type DeviceRecord = {
   device_id: string
   name: string
   location: string | null
+  command_channel: string
 }

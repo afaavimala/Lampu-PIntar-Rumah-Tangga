@@ -1,4 +1,5 @@
 import { createApp } from './app'
+import { MqttGatewayDurableObject } from './durable/mqtt-gateway-object'
 import { runDueSchedules } from './lib/scheduler-runner'
 import type { EnvBindings } from './types/app'
 
@@ -8,7 +9,7 @@ type WorkerExecutionContext = {
 
 const app = createApp()
 
-export { createApp }
+export { createApp, MqttGatewayDurableObject }
 
 function looksLikeStaticAssetPath(pathname: string) {
   return /\.[^/]+$/.test(pathname)

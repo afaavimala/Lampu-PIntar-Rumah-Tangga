@@ -11,6 +11,7 @@ const envelope: CommandDispatchEnvelope = {
   deviceId: 'lampu-teras',
   action: 'ON',
   requestId: 'req-1',
+  commandChannel: 'POWER',
 }
 
 describe('publishCompatibleCommandOverWs', () => {
@@ -18,7 +19,7 @@ describe('publishCompatibleCommandOverWs', () => {
     vi.mocked(publishMqttOverWs).mockReset()
   })
 
-  it('publishes command to tasmota topic variants', async () => {
+  it('publishes command to canonical tasmota topic', async () => {
     vi.mocked(publishMqttOverWs).mockResolvedValue(undefined)
 
     await publishCompatibleCommandOverWs(
@@ -33,26 +34,10 @@ describe('publishCompatibleCommandOverWs', () => {
     const topics = vi.mocked(publishMqttOverWs).mock.calls.map((call) => call[0].topic)
     expect(topics).toEqual([
       'cmnd/lampu-teras/POWER',
-      'lampu-teras/cmnd/POWER',
     ])
   })
 
-  it('succeeds when at least one topic profile is accepted by broker', async () => {
-    vi.mocked(publishMqttOverWs)
-      .mockRejectedValueOnce(new Error('not authorized'))
-      .mockResolvedValueOnce(undefined)
-
-    await expect(
-      publishCompatibleCommandOverWs(
-        {
-          url: 'wss://broker.example/mqtt',
-        },
-        envelope,
-      ),
-    ).resolves.toBeUndefined()
-  })
-
-  it('throws when all compatible publish targets fail', async () => {
+  it('throws when canonical publish fails', async () => {
     vi.mocked(publishMqttOverWs).mockRejectedValue(new Error('not authorized'))
 
     await expect(
@@ -62,6 +47,23 @@ describe('publishCompatibleCommandOverWs', () => {
         },
         envelope,
       ),
-    ).rejects.toThrow('Failed to publish command on all MQTT topic profiles')
+    ).rejects.toThrow('Failed to publish MQTT command')
+  })
+
+  it('uses configured command channel when provided in envelope', async () => {
+    vi.mocked(publishMqttOverWs).mockResolvedValue(undefined)
+
+    await publishCompatibleCommandOverWs(
+      {
+        url: 'wss://broker.example/mqtt',
+      },
+      {
+        ...envelope,
+        commandChannel: 'POWER4',
+      },
+    )
+
+    const topics = vi.mocked(publishMqttOverWs).mock.calls.map((call) => call[0].topic)
+    expect(topics).toEqual(['cmnd/lampu-teras/POWER4'])
   })
 })

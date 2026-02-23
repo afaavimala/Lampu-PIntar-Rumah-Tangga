@@ -1,14 +1,15 @@
 import { computeNextRunAt } from './schedules'
 import { createCommandEnvelope, logCommandDispatch } from './commands'
 import type { EnvBindings } from '../types/app'
-import { getRealtimeMqttProxy } from './realtime-mqtt-proxy'
-import { publishCompatibleCommandOverWs } from './mqtt-command-publish'
+import { publishCommandPersistent } from './mqtt-command-dispatch'
+import { ensureDeviceCommandChannelCompatibility } from './db'
 
 type DueScheduleRow = {
   schedule_id: number
   user_id: number
   device_internal_id: number
   device_id: string
+  command_channel: string
   action: 'ON' | 'OFF'
   cron_expr: string
   timezone: string
@@ -73,6 +74,8 @@ function shouldExecuteForWindow(row: DueScheduleRow, plannedAt: number) {
 }
 
 export async function runDueSchedules(env: EnvBindings) {
+  await ensureDeviceCommandChannelCompatibility(env.DB)
+
   const now = Date.now()
   const dueRows = await env.DB
     .prepare(
@@ -80,6 +83,7 @@ export async function runDueSchedules(env: EnvBindings) {
               ds.user_id,
               ds.device_id AS device_internal_id,
               d.device_id,
+              COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel,
               ds.action,
               ds.cron_expr,
               ds.timezone,
@@ -156,19 +160,10 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
       deviceId: row.device_id,
       action: row.action,
       requestId,
+      commandChannel: row.command_channel,
     })
 
-    const proxy = getRealtimeMqttProxy()
-    if (proxy) {
-      await proxy.publishCommand(envelope)
-    } else {
-      await publishCompatibleCommandOverWs({
-        url: env.MQTT_WS_URL,
-        username: env.MQTT_USERNAME,
-        password: env.MQTT_PASSWORD,
-        clientIdPrefix: env.MQTT_CLIENT_ID_PREFIX,
-      }, envelope)
-    }
+    await publishCommandPersistent(env, envelope)
 
     await env.DB
       .prepare(

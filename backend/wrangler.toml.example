@@ -32,5 +32,14 @@ binding = "DB"
 database_name = "smartlamp_db"
 database_id = "33b4c993-4ebf-471e-aa4d-ca7fb9507ea8"
 
+[durable_objects]
+bindings = [
+  { name = "MQTT_GATEWAY", class_name = "MqttGatewayDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MqttGatewayDurableObject"]
+
 [triggers]
 crons = ["* * * * *"]

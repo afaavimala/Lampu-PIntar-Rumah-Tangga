@@ -19,6 +19,7 @@ export type Device = {
   id: string
   name: string
   location: string | null
+  commandChannel: string
 }
 
 export type DiscoveredDevice = {

@@ -216,10 +216,10 @@
 
   <rect x="1870" y="740" width="700" height="280" class="nodeData"/>
   <text x="1902" y="782" class="nodeTitle">MQTT Compatibility Contract</text>
-  <text x="1902" y="810" class="nodeText">Publish cmd: home/{id}/cmd, cmnd/{id}/POWER, {id}/cmnd/POWER</text>
-  <text x="1902" y="834" class="nodeText">Subscribe status: home/+/status, stat/+/POWER, stat/+/RESULT</text>
-  <text x="1902" y="858" class="nodeText">Subscribe lwt: home/+/lwt, tele/+/LWT (+ FullTopic variant)</text>
-  <text x="1902" y="882" class="nodeText">Normalisasi parser: ESP32 + Tasmota -> event status/lwt tunggal</text>
+  <text x="1902" y="810" class="nodeText">Publish cmd: cmnd/{id}/POWER (canonical)</text>
+  <text x="1902" y="834" class="nodeText">Subscribe status: stat/+/POWER, stat/+/RESULT, tele/+/STATE</text>
+  <text x="1902" y="858" class="nodeText">Subscribe lwt: tele/+/LWT (+ FullTopic variant)</text>
+  <text x="1902" y="882" class="nodeText">Normalisasi parser: Tasmota -> event status/lwt tunggal</text>
   <text x="1902" y="906" class="nodeText">Dipakai konsisten di mode lokal maupun cloud</text>
 
   <rect x="3270" y="250" width="1160" height="250" class="nodeEdge"/>

@@ -424,6 +424,7 @@ body::before {
   grid-template-columns: 96px 1fr auto;
   align-items: center;
   gap: 1.1rem;
+  position: relative;
 }
 
 .lamp-icon-shell {
@@ -450,11 +451,23 @@ body::before {
   height: 66px;
 }
 
+.lamp-meta {
+  min-width: 0;
+}
+
 .lamp-meta h3 {
   margin: 0;
   font-size: clamp(1.3rem, 2.4vw, 1.8rem);
   font-weight: 700;
   line-height: 1.2;
+}
+
+.lamp-meta-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding-right: 4.1rem;
 }
 
 .lamp-subtitle {
@@ -482,6 +495,50 @@ body::before {
   color: #b8ccf5;
   font-size: clamp(0.74rem, 1.2vw, 0.88rem);
   line-height: 1.35;
+}
+
+.lamp-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: absolute;
+  top: 0.72rem;
+  right: 0.72rem;
+  z-index: 2;
+}
+
+.lamp-mini-button {
+  border: 1px solid rgba(150, 194, 255, 0.54);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #e9f2ff;
+  background: linear-gradient(95deg, rgba(38, 87, 199, 0.85), rgba(54, 151, 255, 0.85));
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.lamp-mini-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+}
+
+.lamp-mini-button.danger {
+  border-color: rgba(255, 174, 174, 0.65);
+  background: linear-gradient(95deg, rgba(140, 45, 56, 0.92), rgba(191, 65, 83, 0.92));
+}
+
+.lamp-mini-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.lamp-mini-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .lamp-switch {
@@ -753,6 +810,17 @@ body::before {
 .schedule-actions button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.device-form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.device-form-actions .secondary {
+  border-color: rgba(156, 184, 255, 0.5);
+  background: linear-gradient(95deg, rgba(39, 67, 141, 0.82), rgba(97, 121, 187, 0.76));
 }
 
 .device-discovery {
@@ -1128,6 +1196,20 @@ body::before {
     font-size: clamp(1.1rem, 3.8vw, 1.4rem);
   }
 
+  .lamp-meta-head {
+    gap: 0.5rem;
+  }
+
+  .lamp-mini-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .lamp-mini-icon {
+    width: 14px;
+    height: 14px;
+  }
+
   .lamp-power {
     font-size: clamp(1.02rem, 3.3vw, 1.22rem);
   }
@@ -1308,6 +1390,16 @@ body::before {
 
   .lamp-meta {
     width: 100%;
+  }
+
+  .lamp-meta-head {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .lamp-card-actions {
+    top: 0.55rem;
+    right: 0.55rem;
   }
 
   .lamp-switch {

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_id VARCHAR(191) NOT NULL,
   name VARCHAR(255) NOT NULL,
   location VARCHAR(255) NULL,
+  command_channel VARCHAR(32) NOT NULL DEFAULT 'POWER',
   hmac_secret VARCHAR(255) NULL,
   created_at VARCHAR(64) NOT NULL,
   PRIMARY KEY (id),

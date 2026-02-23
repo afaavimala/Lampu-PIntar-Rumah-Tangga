@@ -30,6 +30,7 @@ bootstrapRoutes.get('/', async (c) => {
       id: device.device_id,
       name: device.name,
       location: device.location,
+      commandChannel: device.command_channel,
     })),
     viewer,
     realtime: {

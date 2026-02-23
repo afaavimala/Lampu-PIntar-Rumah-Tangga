@@ -1487,13 +1487,13 @@
               <tr>
                 <td>Runtime API + Auth</td>
                 <td>Hono API di Node.js, ditambah realtime proxy process-wide.</td>
-                <td>Hono API di Cloudflare Worker, realtime MQTT per koneksi SSE.</td>
+                <td>Hono API di Cloudflare Worker + Durable Object MQTT gateway.</td>
                 <td>HTTPS</td>
               </tr>
               <tr>
                 <td>Publish Command</td>
-                <td>Publish `home/{id}/cmd` + `cmnd/{id}/POWER` + `{id}/cmnd/POWER` ke HiveMQ.</td>
-                <td>Publish topic kompatibel yang sama ke HiveMQ.</td>
+                <td>Publish `cmnd/{id}/POWER` ke HiveMQ (persistent connection).</td>
+                <td>Publish `cmnd/{id}/POWER` via Durable Object ke HiveMQ (persistent connection).</td>
                 <td>MQTT over WSS (`:8884/mqtt`)</td>
               </tr>
               <tr>

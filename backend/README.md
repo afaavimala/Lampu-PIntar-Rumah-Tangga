@@ -29,13 +29,14 @@ npm run start
 Jika `SERVE_DASHBOARD=true`, backend akan melayani build frontend dari folder `../dashboard/dist` di port yang sama.
 Backend juga menjalankan proxy realtime MQTT -> SSE (`/api/v1/realtime/stream`) agar frontend tidak membutuhkan kredensial broker.
 Publish command MQTT menggunakan koneksi broker persistent (single connection per process/isolate), sehingga tidak ada handshake WebSocket ulang per command.
+Pada runtime Worker (Cloudflare), command publish dijalankan lewat Durable Object `MqttGatewayDurableObject` untuk menjaga koneksi broker tetap persisten lintas request.
 Pada runtime Worker (Cloudflare), endpoint SSE membuka subscribe MQTT langsung per koneksi stream.
 Pada deploy Worker, frontend (`dashboard/dist`) ikut di-serve sebagai static assets pada URL Worker yang sama.
 Jika kredensial MQTT backend tidak valid, endpoint command execute akan gagal publish dan merespons `502`.
 
 Kompatibilitas MQTT:
 - Sistem hanya mendukung profile Tasmota.
-- Publish command ke `cmnd/{deviceId}/POWER` dan `{deviceId}/cmnd/POWER`.
+- Publish command ke topik kanonik `cmnd/{deviceId}/POWER`.
 - Realtime subscribe juga menangkap `stat/+/POWER(1..8)`, `stat/+/RESULT`, `tele/+/STATE`, `tele/+/LWT` (termasuk variasi urutan FullTopic).
 - Asumsi prefix Tasmota: `cmnd/stat/tele` dengan FullTopic `%prefix%/%topic%/` atau `%topic%/%prefix%/`.
 

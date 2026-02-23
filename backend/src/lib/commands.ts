@@ -1,20 +1,24 @@
 import type { CommandAction } from '../types/app'
+import { normalizeTasmotaCommandChannel } from './mqtt-compat'
 
 export type CommandDispatchEnvelope = {
   deviceId: string
   action: CommandAction
   requestId: string
+  commandChannel: string
 }
 
 export function createCommandEnvelope(input: {
   deviceId: string
   action: CommandAction
   requestId: string
+  commandChannel?: string
 }): CommandDispatchEnvelope {
   return {
     deviceId: input.deviceId.trim(),
     action: input.action,
     requestId: input.requestId,
+    commandChannel: normalizeTasmotaCommandChannel(input.commandChannel),
   }
 }
 

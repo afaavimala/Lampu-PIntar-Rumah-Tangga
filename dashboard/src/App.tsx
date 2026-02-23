@@ -3,11 +3,12 @@ import './App.css'
 import { DeviceManager } from './components/DeviceManager'
 import { LoginForm } from './components/LoginForm'
 import { ScheduleManager } from './components/ScheduleManager'
-import { BulbIcon, UserCircleIcon, WifiIcon } from './components/UiIcons'
+import { BulbIcon, DeleteIcon, EditIcon, UserCircleIcon, WifiIcon } from './components/UiIcons'
 import {
   bootstrap,
   createDevice,
   createSchedule,
+  deleteDevice,
   deleteSchedule,
   discoverDevices,
   executeCommand,
@@ -17,6 +18,7 @@ import {
   login,
   logout,
   patchSchedule,
+  updateDevice,
 } from './lib/api'
 import { createRealtimeClient, type RealtimeClient } from './lib/realtime'
 import type {
@@ -155,6 +157,8 @@ export default function App() {
   const [discoveryScannedAt, setDiscoveryScannedAt] = useState<string | null>(null)
   const [discoveryWaitMs, setDiscoveryWaitMs] = useState<number | null>(null)
   const [claimingDeviceId, setClaimingDeviceId] = useState<string | null>(null)
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
+  const [deviceEditFocusNonce, setDeviceEditFocusNonce] = useState(0)
   const [uptimeSeconds, setUptimeSeconds] = useState(0)
 
   const realtimeRef = useRef<RealtimeClient | null>(null)
@@ -190,6 +194,7 @@ export default function App() {
       setDiscoveryScannedAt(null)
       setDiscoveryWaitMs(null)
       setClaimingDeviceId(null)
+      setEditingDeviceId(null)
       setSchedules([])
       setSelectedScheduleId(null)
       setScheduleRuns([])
@@ -325,7 +330,21 @@ export default function App() {
     }
   }, [isLoggedIn])
 
+  useEffect(() => {
+    if (!editingDeviceId) {
+      return
+    }
+    if (devices.some((device) => device.id === editingDeviceId)) {
+      return
+    }
+    setEditingDeviceId(null)
+  }, [devices, editingDeviceId])
+
   const sortedDevices = useMemo(() => [...devices].sort((a, b) => a.name.localeCompare(b.name)), [devices])
+  const editingDevice = useMemo(
+    () => (editingDeviceId ? devices.find((device) => device.id === editingDeviceId) ?? null : null),
+    [devices, editingDeviceId],
+  )
 
   const lamps = useMemo<LampView[]>(
     () =>
@@ -382,6 +401,7 @@ export default function App() {
       setDiscoveryScannedAt(null)
       setDiscoveryWaitMs(null)
       setClaimingDeviceId(null)
+      setEditingDeviceId(null)
       setSchedules([])
       setSelectedScheduleId(null)
       setScheduleRuns([])
@@ -451,6 +471,7 @@ export default function App() {
     deviceId: string
     name: string
     location?: string
+    commandChannel?: string
   }) {
     setGlobalError(null)
     setDeviceBusy(true)
@@ -460,8 +481,59 @@ export default function App() {
         idempotencyKey: crypto.randomUUID(),
       })
       await hydrateDashboard()
+      setEditingDeviceId(null)
     } catch (error) {
       setGlobalError(toErrorMessage(error, 'Gagal menambah device'))
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+
+  async function handleUpdateDevice(input: {
+    deviceId: string
+    name: string
+    location?: string
+    commandChannel?: string
+  }) {
+    setGlobalError(null)
+    setDeviceBusy(true)
+    try {
+      await updateDevice({
+        ...input,
+        idempotencyKey: crypto.randomUUID(),
+      })
+      await hydrateDashboard()
+      setEditingDeviceId(null)
+    } catch (error) {
+      setGlobalError(toErrorMessage(error, 'Gagal menyimpan perubahan device'))
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+
+  function handleStartEditDevice(deviceId: string) {
+    setEditingDeviceId(deviceId)
+    setDeviceEditFocusNonce((value) => value + 1)
+  }
+
+  async function handleDeleteDevice(device: Device) {
+    if (!window.confirm(`Hapus device "${device.name}" (${device.id})?`)) {
+      return
+    }
+
+    setGlobalError(null)
+    setDeviceBusy(true)
+    try {
+      await deleteDevice({
+        deviceId: device.id,
+        idempotencyKey: crypto.randomUUID(),
+      })
+      await hydrateDashboard()
+      if (editingDeviceId === device.id) {
+        setEditingDeviceId(null)
+      }
+    } catch (error) {
+      setGlobalError(toErrorMessage(error, 'Gagal menghapus device'))
     } finally {
       setDeviceBusy(false)
     }
@@ -664,10 +736,35 @@ export default function App() {
                     <BulbIcon className="lamp-icon" />
                   </div>
                   <div className="lamp-meta">
-                    <h3>{lamp.title}</h3>
+                    <div className="lamp-meta-head">
+                      <h3>{lamp.title}</h3>
+                      <div className="lamp-card-actions">
+                        <button
+                          type="button"
+                          className="lamp-mini-button"
+                          disabled={loading || deviceBusy}
+                          onClick={() => handleStartEditDevice(lamp.device.id)}
+                          aria-label={`Edit ${lamp.title}`}
+                          title={`Edit ${lamp.title}`}
+                        >
+                          <EditIcon className="lamp-mini-icon" />
+                        </button>
+                        <button
+                          type="button"
+                          className="lamp-mini-button danger"
+                          disabled={loading || deviceBusy}
+                          onClick={() => void handleDeleteDevice(lamp.device)}
+                          aria-label={`Hapus ${lamp.title}`}
+                          title={`Hapus ${lamp.title}`}
+                        >
+                          <DeleteIcon className="lamp-mini-icon" />
+                        </button>
+                      </div>
+                    </div>
                     <p className="lamp-subtitle">
                       {lamp.device.id}
                       {lamp.device.location ? ` • ${lamp.device.location}` : ''}
+                      {` • cmd: ${lamp.device.commandChannel}`}
                     </p>
                     <p className={`lamp-power ${lamp.power === 'ON' ? 'on' : 'off'}`}>{lamp.power}</p>
                     <p className="lamp-statusline">
@@ -678,7 +775,7 @@ export default function App() {
                     type="button"
                     className={`lamp-switch ${lamp.power === 'ON' ? 'on' : 'off'}`}
                     onClick={() => void handleToggleLamp(lamp)}
-                    disabled={loading || !!pendingToggleByDevice[lamp.device.id]}
+                    disabled={loading || deviceBusy || !!pendingToggleByDevice[lamp.device.id]}
                     aria-label={`${lamp.title} switch`}
                   >
                     <span className="lamp-switch-label">{lamp.power}</span>
@@ -734,6 +831,10 @@ export default function App() {
         <section className="management-grid">
           <DeviceManager
             onCreateDevice={handleCreateDevice}
+            onUpdateDevice={handleUpdateDevice}
+            onCancelEdit={() => setEditingDeviceId(null)}
+            editingDevice={editingDevice}
+            editFocusNonce={deviceEditFocusNonce}
             onDiscover={handleDiscoverDevices}
             onClaimDiscovered={handleClaimDiscoveredDevice}
             discoveredDevices={discoveredDevices}

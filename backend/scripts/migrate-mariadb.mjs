@@ -151,6 +151,7 @@ async function ensureIndex(conn, tableName, indexName, indexExpressionSql) {
 }
 
 async function ensureSchemaCompatibility(conn) {
+  await ensureColumn(conn, 'devices', 'command_channel', "VARCHAR(32) NOT NULL DEFAULT 'POWER'")
   await ensureColumn(conn, 'device_schedules', 'window_group_id', 'VARCHAR(191) NULL')
   await ensureColumn(conn, 'device_schedules', 'window_start_minute', 'INT NULL')
   await ensureColumn(conn, 'device_schedules', 'window_end_minute', 'INT NULL')
@@ -165,6 +166,7 @@ async function seedDefaults(conn) {
   const sampleDeviceId = process.env.SEED_SAMPLE_DEVICE_ID?.trim() || 'lampu-ruang-tamu'
   const sampleDeviceName = process.env.SEED_SAMPLE_DEVICE_NAME?.trim() || 'Lampu Ruang Tamu'
   const sampleDeviceLocation = process.env.SEED_SAMPLE_DEVICE_LOCATION?.trim() || 'Ruang Tamu'
+  const sampleDeviceCommandChannel = process.env.SEED_SAMPLE_DEVICE_COMMAND_CHANNEL?.trim() || 'POWER'
   const legacySecretPlaceholder = 'unused-tasmota'
   const demoApiKey = process.env.SEED_DEMO_API_KEY?.trim() || 'demo-integration-key'
   const demoApiHash = createHash('sha256').update(demoApiKey).digest('hex')
@@ -178,13 +180,21 @@ async function seedDefaults(conn) {
   )
 
   await conn.query(
-    `INSERT INTO devices (device_id, name, location, hmac_secret, created_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO devices (device_id, name, location, command_channel, hmac_secret, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        name = VALUES(name),
        location = VALUES(location),
+       command_channel = VALUES(command_channel),
        hmac_secret = VALUES(hmac_secret)`,
-    [sampleDeviceId, sampleDeviceName, sampleDeviceLocation, legacySecretPlaceholder, nowIso],
+    [
+      sampleDeviceId,
+      sampleDeviceName,
+      sampleDeviceLocation,
+      sampleDeviceCommandChannel,
+      legacySecretPlaceholder,
+      nowIso,
+    ],
   )
 
   const userRow = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [adminEmail])

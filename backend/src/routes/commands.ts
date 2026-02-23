@@ -9,7 +9,7 @@ import { beginIdempotentRequest, persistIdempotentResponse } from '../lib/idempo
 import { createCommandEnvelope, logCommandDispatch } from '../lib/commands'
 import { resolveDeviceAccess } from '../lib/db'
 import { applyRateLimitHeaders, consumeRateLimit, getClientIp, readPositiveInt } from '../lib/rate-limit'
-import { getRealtimeMqttProxy, initializeRealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
+import { publishCommandPersistent } from '../lib/mqtt-command-dispatch'
 
 const commandSchema = z.object({
   deviceId: z.string().min(1),
@@ -74,6 +74,7 @@ async function resolveCommandContext(c: Context<AppEnv>, input: {
     deviceId: input.deviceId,
     action: input.action as CommandAction,
     requestId: input.requestId,
+    commandChannel: device.command_channel,
   })
 
   return {
@@ -107,13 +108,7 @@ commandRoutes.post('/execute', requireAuth(['command']), async (c) => {
   }
 
   try {
-    const proxy = getRealtimeMqttProxy() ?? initializeRealtimeMqttProxy({
-      url: c.env.MQTT_WS_URL,
-      username: c.env.MQTT_USERNAME,
-      password: c.env.MQTT_PASSWORD,
-      clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
-    })
-    await proxy.publishCommand(context.envelope)
+    await publishCommandPersistent(c.env, context.envelope)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to publish command'
     return fail(c, 'INTERNAL_ERROR', message, 502)

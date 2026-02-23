@@ -23,6 +23,25 @@ function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
+const TASMOTA_COMMAND_CHANNEL_PATTERN = /^POWER(?:[1-9]\d?)?$/i
+
+export function normalizeTasmotaCommandChannel(value: unknown): string {
+  if (typeof value !== 'string') {
+    return 'POWER'
+  }
+
+  const normalized = value.trim().toUpperCase()
+  if (!normalized) {
+    return 'POWER'
+  }
+
+  if (!TASMOTA_COMMAND_CHANNEL_PATTERN.test(normalized)) {
+    return 'POWER'
+  }
+
+  return normalized
+}
+
 export function normalizeTasmotaSwitchValue(value: unknown): NormalizedSwitchPower | null {
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase()
@@ -139,19 +158,18 @@ export function extractTasmotaDeviceIdFromTopic(topic: string, expectedPrefix: '
 export function buildCommandPublishTargets(input: {
   deviceId: string
   action: CommandAction
+  commandChannel?: string
 }): CommandPublishTarget[] {
   const deviceId = input.deviceId.trim()
   if (!deviceId) {
     return []
   }
 
+  const commandChannel = normalizeTasmotaCommandChannel(input.commandChannel)
+
   return [
     {
-      topic: `cmnd/${deviceId}/POWER`,
-      payload: input.action,
-    },
-    {
-      topic: `${deviceId}/cmnd/POWER`,
+      topic: `cmnd/${deviceId}/${commandChannel}`,
       payload: input.action,
     },
   ]

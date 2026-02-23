@@ -122,6 +122,7 @@ ALTER TABLE device_schedules ADD COLUMN window_group_id TEXT;
 ALTER TABLE device_schedules ADD COLUMN window_start_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN window_end_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN enforce_every_minute INTEGER;
+ALTER TABLE devices ADD COLUMN command_channel TEXT NOT NULL DEFAULT 'POWER';
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits (reset_at);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active ON auth_sessions (user_id, revoked_at, expires_at);
@@ -141,11 +142,12 @@ VALUES (
   datetime('now')
 );
 
-INSERT OR IGNORE INTO devices (device_id, name, location, hmac_secret, created_at)
+INSERT OR IGNORE INTO devices (device_id, name, location, command_channel, hmac_secret, created_at)
 VALUES (
   'lampu-ruang-tamu',
   'Lampu Ruang Tamu',
   'Ruang Tamu',
+  'POWER',
   'f43a301812844e47ab5908ebae902934fd3555cdc53f0da63df6fcb8a35bf98f',
   datetime('now')
 );

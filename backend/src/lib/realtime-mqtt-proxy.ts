@@ -40,6 +40,7 @@ type RealtimeProxyConfig = {
   password?: string
   clientIdPrefix?: string
   connectTimeoutMs?: number
+  subscribeRealtime?: boolean
 }
 
 function encodeVarInt(value: number) {
@@ -354,6 +355,7 @@ export class RealtimeMqttProxy {
     const targets = buildCommandPublishTargets({
       deviceId: envelope.deviceId,
       action: envelope.action,
+      commandChannel: envelope.commandChannel,
     })
 
     const publishResults = await Promise.allSettled(
@@ -380,7 +382,7 @@ export class RealtimeMqttProxy {
     }
 
     const details = errors.join('; ') || 'unknown publish error'
-    throw new Error(`Failed to publish command on all MQTT topic profiles (${details})`)
+    throw new Error(`Failed to publish MQTT command (${details})`)
   }
 
   private ensureConnected() {
@@ -446,7 +448,9 @@ export class RealtimeMqttProxy {
             connAcked = true
             this.connected = true
             clearTimeout(connAckTimeout)
-            ws.send(buildSubscribePacket(this.nextPacketId(), getRealtimeSubscribeTopics()))
+            if (this.config.subscribeRealtime !== false) {
+              ws.send(buildSubscribePacket(this.nextPacketId(), getRealtimeSubscribeTopics()))
+            }
             this.startPing(ws)
             this.resolveConnectionWaiters()
             continue
@@ -470,6 +474,10 @@ export class RealtimeMqttProxy {
           }
 
           if (packetType !== PUBLISH_PACKET_TYPE) {
+            continue
+          }
+
+          if (this.config.subscribeRealtime === false) {
             continue
           }
 

@@ -102,12 +102,13 @@ describe('auth and access verification', () => {
         if (sql.includes('FROM rate_limit_hits')) {
           return null
         }
-        if (sql === 'SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1') {
+        if (sql.includes('FROM devices') && sql.includes('WHERE device_id = ?')) {
           return {
             id: 99,
             device_id: 'device-user-b',
             name: 'Device User B',
             location: 'B',
+            command_channel: 'POWER',
           }
         }
         if (sql === 'SELECT 1 AS ok FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1') {
@@ -117,6 +118,12 @@ describe('auth and access verification', () => {
       }
 
       if (mode === 'run') {
+        if (sql.startsWith('ALTER TABLE devices ADD COLUMN command_channel')) {
+          return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
+        }
+        if (sql.startsWith('UPDATE devices')) {
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
         if (sql.includes('INSERT INTO rate_limit_hits')) {
           return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
         }

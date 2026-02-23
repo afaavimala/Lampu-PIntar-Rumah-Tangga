@@ -12,6 +12,7 @@ vi.mock('../src/lib/commands', () => ({
     deviceId: input.deviceId,
     action: input.action,
     requestId: input.requestId,
+    commandChannel: 'POWER',
   })),
   logCommandDispatch: vi.fn(async () => undefined),
 }))
@@ -21,6 +22,7 @@ type DueScheduleRow = {
   user_id: number
   device_internal_id: number
   device_id: string
+  command_channel: string
   action: 'ON' | 'OFF'
   cron_expr: string
   timezone: string
@@ -56,6 +58,14 @@ class SchedulerDbMock implements AppDatabase {
         throw new Error(`Unexpected all() query in test: ${query}`)
       },
       async run() {
+        if (query.startsWith('ALTER TABLE devices ADD COLUMN command_channel')) {
+          return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
+        }
+
+        if (query.startsWith('UPDATE devices')) {
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
+
         if (query.includes('INSERT OR IGNORE INTO schedule_runs')) {
           const key = `${String(params[0])}:${String(params[2])}`
           if (db.runKeys.has(key)) {
@@ -88,6 +98,7 @@ describe('scheduler runner dedup', () => {
         user_id: 1,
         device_internal_id: 11,
         device_id: 'lampu-uji-dedup',
+        command_channel: 'POWER',
         action: 'ON',
         cron_expr: '* * * * *',
         timezone: 'Asia/Jakarta',

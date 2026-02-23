@@ -93,9 +93,9 @@ flowchart TB
 | Dashboard -> Backend | Browser ke API | HTTPS REST + JSON | `/api/v1/auth/*`, `/api/v1/bootstrap`, `/api/v1/commands/*`, `/api/v1/schedules*`, `/api/v1/devices*`, `/api/v1/status` | JSON request/response |
 | Backend -> Dashboard | API ke Browser | SSE (`text/event-stream`) | `/api/v1/realtime/stream` | Event `hello`, `ping`, `status`, `lwt` |
 | Integrasi eksternal -> Backend | Client integrasi ke API | HTTPS REST + Bearer API Key | `/api/v1/integrations/capabilities`, `/api/v1/devices*`, `/api/v1/schedules*`, dll | JSON |
-| Backend -> Broker | Hono runtime ke HiveMQ | MQTT 3.1.1 over WSS (`mqtt` subprotocol) | `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER` | payload `ON/OFF` (profile Tasmota) |
-| Broker -> Backend (Node) | HiveMQ ke realtime proxy | MQTT 3.1.1 over WSS subscribe | `home/+/status`, `home/+/lwt`, `stat/+/POWER(1..8)`, `+/stat/POWER(1..8)`, `stat/+/RESULT`, `+/stat/RESULT`, `tele/+/STATE`, `+/tele/STATE`, `tele/+/LWT`, `+/tele/LWT` | JSON status + string LWT |
-| ESP32 <-> Broker | Device ke HiveMQ | MQTT over TLS (TCP/8883) | `home/{deviceId}/cmd`, `home/{deviceId}/status`, `home/{deviceId}/lwt` | Command JSON, status JSON, LWT string |
+| Backend -> Broker | Hono runtime ke HiveMQ | MQTT 3.1.1 over WSS (`mqtt` subprotocol) | `cmnd/{deviceId}/POWER` | payload `ON/OFF` (profile Tasmota) |
+| Broker -> Backend (Node) | HiveMQ ke realtime proxy | MQTT 3.1.1 over WSS subscribe | `stat/+/POWER(1..8)`, `+/stat/POWER(1..8)`, `stat/+/RESULT`, `+/stat/RESULT`, `tele/+/STATE`, `+/tele/STATE`, `tele/+/LWT`, `+/tele/LWT` | JSON status + string LWT |
+| ESP32 <-> Broker | Device Tasmota ke HiveMQ | MQTT | `cmnd/{topic}/POWER`, `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE|LWT` | payload `ON/OFF`, JSON state, LWT string |
 | Tasmota <-> Broker | Device Tasmota ke broker | MQTT | `cmnd/{topic}/POWER`, `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE|LWT` | payload `ON/OFF`, JSON state, LWT `Online/Offline` |
 | Node Backend -> MariaDB | App server ke DB | MariaDB protocol (TCP/3306) | tabel aplikasi | data auth/device/schedule/log |
 | Worker Backend -> D1 | Worker ke DB cloud | Cloudflare D1 binding | tabel aplikasi | data auth/device/schedule/log |
@@ -104,20 +104,16 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  STATUS["home/{deviceId}/status<br/>JSON DeviceStatus"]
-  LWT["home/{deviceId}/lwt<br/>ONLINE/OFFLINE"]
   TCMND["cmnd/{deviceId}/POWER<br/>ON/OFF"]
   TSTAT["stat/{deviceId}/POWER|RESULT<br/>Tasmota state"]
   TTELE["tele/{deviceId}/STATE|LWT<br/>Tasmota teleperiod+lwt"]
 
   API["Backend Command API / Scheduler"] --> TCMND
-  ESP["ESP32 Firmware"] --> STATUS
-  ESP --> LWT
-  STATUS --> RT["Realtime MQTT Reader<br/>(Node proxy / Worker per-stream)"]
-  LWT --> RT
-  TSTAT --> RT
+  ESP["Tasmota Device"] --> TSTAT
+  ESP --> TTELE
+  TSTAT --> RT["Realtime MQTT Reader<br/>(Node proxy / Worker per-stream)"]
   TTELE --> RT
-  TCMND --> TASMOTA["Tasmota Device"]
+  TCMND --> ESP
   RT --> SSE["SSE Stream ke Dashboard"]
 ```
 
@@ -141,17 +137,17 @@ sequenceDiagram
   participant API as Hono API
   participant DB as MariaDB/D1
   participant MQ as HiveMQ Broker
-  participant ESP as ESP32
+  participant ESP as Tasmota Device
 
   U->>FE: Klik ON/OFF
   FE->>API: POST /api/v1/commands/execute\n(Cookie JWT + Idempotency-Key)
   API->>DB: Validasi user/device access
-  API->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
+  API->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER (via DO pada runtime Worker)
   API->>DB: INSERT command_logs(result=PUBLISHED)
   MQ->>ESP: Deliver command profile sesuai device
   ESP->>ESP: Tasmota execute POWER
-  ESP->>MQ: PUBLISH status (home/{deviceId}/status atau stat/{topic}/POWER|RESULT, tele/{topic}/STATE)
-  ESP->>MQ: Publish/maintain LWT (home/{deviceId}/lwt atau tele/{topic}/LWT)
+  ESP->>MQ: PUBLISH status stat/{topic}/POWER|RESULT, tele/{topic}/STATE
+  ESP->>MQ: Publish/maintain LWT tele/{topic}/LWT
   MQ-->>API: status/lwt event (Node proxy atau Worker per-stream subscribe)
   API-->>FE: SSE event type=status/lwt
 ```
@@ -172,7 +168,7 @@ sequenceDiagram
     FE->>API: Open SSE
     API->>DB: Initial status snapshot (listBestStatus)
     API->>RP: subscribe(deviceIds)
-    RP->>MQ: SUBSCRIBE home/* + stat/* + tele/* (+ variasi FullTopic)
+    RP->>MQ: SUBSCRIBE stat/* + tele/* (+ variasi FullTopic)
     MQ-->>RP: PUBLISH status/lwt
     RP-->>API: callback event
     API-->>FE: SSE delta status/lwt
@@ -182,7 +178,7 @@ sequenceDiagram
     Note over FE,MQ: Mode Cloudflare Worker (per-connection MQTT)
     FE->>API: Open SSE
     API->>MQ: Open MQTT WSS client per stream
-    API->>MQ: SUBSCRIBE home/* + stat/* + tele/* (+ variasi FullTopic)
+    API->>MQ: SUBSCRIBE stat/* + tele/* (+ variasi FullTopic)
     MQ-->>API: PUBLISH status/lwt
     API-->>FE: SSE delta status/lwt
     API->>MQ: readLwtSnapshotOverWs(deviceIds) untuk bootstrap LWT retained
@@ -203,7 +199,7 @@ sequenceDiagram
   T->>SCH: runDueSchedules()
   SCH->>DB: SELECT due schedules (enabled + next_run_at <= now)
   SCH->>DB: INSERT schedule_runs (idempotent by unique schedule_id+planned_at)
-  SCH->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER (+ {deviceId}/cmnd/POWER)
+  SCH->>MQ: PUBLISH QoS1 cmnd/{deviceId}/POWER
   MQ->>ESP: command schedule
   ESP->>ESP: execute relay
   SCH->>DB: UPDATE schedule_runs SUCCESS/FAILED

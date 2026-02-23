@@ -19,5 +19,8 @@
     "start:production": "bash ./scripts/start-production.sh",
     "deploy:worker": "bash ./scripts/deploy-worker.sh",
     "deploy:local": "bash ./scripts/deploy-local.sh"
+  },
+  "devDependencies": {
+    "wrangler": "^4.67.0"
   }
 }

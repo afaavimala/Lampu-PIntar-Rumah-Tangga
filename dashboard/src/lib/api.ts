@@ -113,17 +113,53 @@ export function createDevice(input: {
   deviceId: string
   name: string
   location?: string
+  commandChannel?: string
   idempotencyKey: string
 }) {
-  return apiFetch<{ id: string; name: string; location: string | null }>('/api/v1/devices', {
-    method: 'POST',
-    headers: jsonHeaders(input.idempotencyKey),
-    body: JSON.stringify({
-      deviceId: input.deviceId,
-      name: input.name,
-      location: input.location,
-    }),
-  })
+  return apiFetch<{ id: string; name: string; location: string | null; commandChannel: string }>(
+    '/api/v1/devices',
+    {
+      method: 'POST',
+      headers: jsonHeaders(input.idempotencyKey),
+      body: JSON.stringify({
+        deviceId: input.deviceId,
+        name: input.name,
+        location: input.location,
+        commandChannel: input.commandChannel,
+      }),
+    },
+  )
+}
+
+export function updateDevice(input: {
+  deviceId: string
+  name?: string
+  location?: string | null
+  commandChannel?: string | null
+  idempotencyKey: string
+}) {
+  return apiFetch<{ id: string; name: string; location: string | null; commandChannel: string }>(
+    `/api/v1/devices/${encodeURIComponent(input.deviceId)}`,
+    {
+      method: 'PATCH',
+      headers: jsonHeaders(input.idempotencyKey),
+      body: JSON.stringify({
+        name: input.name,
+        location: input.location,
+        commandChannel: input.commandChannel,
+      }),
+    },
+  )
+}
+
+export function deleteDevice(input: { deviceId: string; idempotencyKey: string }) {
+  return apiFetch<{ deleted: boolean; deviceId: string }>(
+    `/api/v1/devices/${encodeURIComponent(input.deviceId)}`,
+    {
+      method: 'DELETE',
+      headers: jsonHeaders(input.idempotencyKey),
+    },
+  )
 }
 
 export function discoverDevices(input?: { waitMs?: number; maxDevices?: number }) {

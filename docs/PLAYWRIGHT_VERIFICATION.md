@@ -29,8 +29,8 @@ Tanggal verifikasi:
 9. `POST /api/v1/commands/execute`: `PASS`
 10. Tambah device dari dashboard cloud (`POST /api/v1/devices`): `PASS`
 11. Jadwal otomatis UI berbasis waktu `HH:mm` (create/edit/list) di cloud: `PASS`
-12. Publish command MQTT dari dashboard cloud (verifikasi `mosquitto_sub` topic `home/{deviceId}/cmd`): `PASS`
-13. Local dev: publish LWT `OFFLINE/ONLINE` ke `home/lampu-ruang-tamu/lwt` mengubah badge device realtime: `PASS`
+12. Publish command MQTT dari dashboard cloud (verifikasi `mosquitto_sub` topic `cmnd/{deviceId}/POWER`): `PASS`
+13. Local dev: publish LWT `OFFLINE/ONLINE` ke `tele/lampu-ruang-tamu/LWT` mengubah badge device realtime: `PASS`
 14. Local dev: setelah reload dashboard, SSE reconnect + resubscribe tetap menerima event LWT: `PASS`
 15. Audit console browser local production (`http://127.0.0.1:8787`): `PASS` (`Errors: 0`, `Warnings: 0`).
 16. Audit console browser cloud Worker (`https://smartlamp-backend.robert-rully.workers.dev`): `PASS` (`Errors: 0`, `Warnings: 0`).

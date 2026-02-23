@@ -13,7 +13,7 @@ Stack saat ini:
 
 Catatan runtime realtime:
 - Node lokal: SSE disuplai dari subscriber MQTT backend (event status/lwt broker).
-- Cloudflare Worker: SSE fallback polling status DB + snapshot LWT retained via MQTT over WebSocket (tanpa kredensial MQTT di frontend).
+- Cloudflare Worker: command publish lewat Durable Object MQTT gateway (koneksi persisten broker), SSE tetap disuplai dari MQTT subscribe per stream + snapshot LWT retained.
 
 ## Arsitektur Ringkas
 
@@ -311,7 +311,7 @@ Open integration:
 ## MQTT Contract (Tasmota Only)
 
 Topic standar Tasmota:
-- Command: `cmnd/{deviceId}/POWER` atau `{deviceId}/cmnd/POWER`
+- Command: `cmnd/{deviceId}/POWER` (kanonik)
 - Status: `stat/{deviceId}/POWER`, `stat/{deviceId}/RESULT`, `tele/{deviceId}/STATE`
 - LWT: `tele/{deviceId}/LWT` atau `{deviceId}/tele/LWT`
 
@@ -325,6 +325,8 @@ Catatan:
 Source of truth implementasi:
 - `backend/src/routes/commands.ts`
 - `backend/src/lib/scheduler-runner.ts`
+- `backend/src/lib/mqtt-command-dispatch.ts`
+- `backend/src/durable/mqtt-gateway-object.ts`
 - `backend/src/lib/mqtt-ws.ts`
 - `backend/src/lib/crypto.ts`
 - `backend/src/lib/realtime-mqtt-proxy.ts`

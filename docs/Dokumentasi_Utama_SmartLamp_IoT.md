@@ -76,8 +76,8 @@ ESP32/Tasmota -- MQTT ----\
                            > HiveMQ Broker
 Backend ------- MQTT WSS --/
 
-Backend subscribe status/lwt dari profile native (`home/*`) dan Tasmota (`stat/*`, `tele/*`) lalu mem-forward ke SSE dashboard.
-Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER`.
+Backend subscribe status/lwt dari profile Tasmota (`stat/*`, `tele/*`) lalu mem-forward ke SSE dashboard.
+Backend publish command ke topik kanonik: `cmnd/{deviceId}/POWER`.
 Device mengeksekusi command `POWER` dan mem-publish status/LWT sesuai profil topic.
 ```
 
@@ -111,14 +111,14 @@ Device mengeksekusi command `POWER` dan mem-publish status/LWT sesuai profil top
 1. User klik ON/OFF pada device tertentu.
 2. Dashboard request `POST /api/v1/commands/execute` ke backend.
 3. Backend validasi JWT + akses device.
-4. Backend publish command ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
+4. Backend publish command ke topik kanonik: `cmnd/{deviceId}/POWER`.
 5. Backend simpan audit command ke MariaDB.
-6. Device menjalankan ON/OFF lalu publish status terbaru (native atau Tasmota).
+6. Device menjalankan ON/OFF lalu publish status terbaru (Tasmota).
 
 ## 4.5 Realtime Status
 
-1. Device publish status ke broker: native `home/{deviceId}/status` atau Tasmota `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE`.
-2. Device publish LWT: native `home/{deviceId}/lwt` atau Tasmota `tele/{topic}/LWT`.
+1. Device publish status ke broker Tasmota: `stat/{topic}/POWER|RESULT`, `tele/{topic}/STATE`.
+2. Device publish LWT Tasmota: `tele/{topic}/LWT`.
 3. Backend subscribe event dari broker MQTT lalu stream ke dashboard via SSE.
 4. `GET /api/v1/status` dipakai sebagai fallback non-realtime (opsional).
 
@@ -129,7 +129,7 @@ Device mengeksekusi command `POWER` dan mem-publish status/LWT sesuai profil top
 3. Backend simpan rule jadwal ke MariaDB dan hitung `next_run_at`.
 4. Scheduler process di backend berjalan periodik (misalnya per menit) untuk mengambil jadwal jatuh tempo.
 5. Untuk setiap jadwal due, backend membangun command ON/OFF seperti command manual.
-6. Backend publish command schedule ke broker (MQTT over WSS) ke topic kompatibel: `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, dan `{deviceId}/cmnd/POWER`.
+6. Backend publish command schedule ke broker (MQTT over WSS) ke topik kanonik: `cmnd/{deviceId}/POWER`.
 7. Backend simpan hasil eksekusi ke `schedule_runs` dan update `next_run_at`.
 
 ---
@@ -138,13 +138,8 @@ Device mengeksekusi command `POWER` dan mem-publish status/LWT sesuai profil top
 
 ## 5.1 Topic Naming
 
-SmartLamp profile (native):
-- Command: `home/{deviceId}/cmd`
-- Status: `home/{deviceId}/status`
-- LWT: `home/{deviceId}/lwt`
-
-Tasmota profile (kompatibel):
-- Command: `cmnd/{deviceId}/POWER` atau `{deviceId}/cmnd/POWER` (variasi FullTopic).
+Tasmota profile (didukung):
+- Command: `cmnd/{deviceId}/POWER` (kanonik).
 - Status: `stat/{deviceId}/POWER` s.d. `POWER8`, `stat/{deviceId}/RESULT`, `tele/{deviceId}/STATE`.
 - LWT: `tele/{deviceId}/LWT` atau `{deviceId}/tele/LWT`.
 
@@ -506,7 +501,7 @@ Arsitektur ini didukung pada tiga mode deploy dengan codebase yang sama:
 ## 13.2 PHASE 2 - Firmware ESP32
 
 - [x] Implement MQTT TLS connect + reconnect.
-- [x] Subscribe `home/{deviceId}/cmd` (profile native ESP32).
+- [x] Konfigurasi command profile Tasmota `cmnd/{deviceId}/POWER`.
 - [x] Publish `status` retained setelah setiap perubahan state.
 - [x] Konfigurasi LWT `ONLINE/OFFLINE`.
 
@@ -543,7 +538,7 @@ Catatan:
 - [x] Implement scheduler runner pada process backend (interval periodik).
 - [x] Implement kalkulasi `next_run_at` (cron + timezone IANA).
 - [x] Implement log eksekusi jadwal ke `schedule_runs`.
-- [x] Implement publish command schedule ke topic kompatibel `home/{deviceId}/cmd`, `cmnd/{deviceId}/POWER`, `{deviceId}/cmnd/POWER`.
+- [x] Implement publish command schedule ke topik kanonik `cmnd/{deviceId}/POWER`.
 - [x] Implement middleware response envelope standar (`success/data/error/meta`).
 - [x] Implement API key auth + scope check untuk akses integrasi.
 - [x] Implement idempotency middleware untuk endpoint mutasi.
@@ -607,10 +602,10 @@ Catatan verifikasi terakhir:
   - `backend/test/authz.test.ts`: JWT expired -> `AUTH_EXPIRED_TOKEN`, dan user tanpa akses device -> `FORBIDDEN_DEVICE_ACCESS`.
 - Verifikasi kompatibilitas MQTT Tasmota (21 February 2026):
   - `backend/test/mqtt-compat.test.ts`: parser/pemetaan topic `stat|tele` + variasi FullTopic.
-  - `backend/test/mqtt-command-publish.test.ts`: publish command multi-profile (`home`, `cmnd`, `{deviceId}/cmnd`).
+  - `backend/test/mqtt-command-publish.test.ts`: publish command topik kanonik (`cmnd/{deviceId}/POWER`).
   - `npm --prefix backend test`: semua test lulus.
 - Verifikasi Playwright + MQTT (17 February 2026, local dev):
-  - Publish `home/lampu-ruang-tamu/lwt = OFFLINE/ONLINE` memicu update badge device realtime.
+  - Publish `tele/lampu-ruang-tamu/LWT = OFFLINE/ONLINE` memicu update badge device realtime.
   - Setelah reload dashboard, stream SSE kembali aktif dan event LWT tetap diterima (resubscribe + state sinkron).
 - Verifikasi paralel + latency (17 February 2026, cloud Worker):
   - `scripts/verify-parallel-devices.sh` -> 10 device dieksekusi paralel, hasil `OK: 10`, `FAIL: 0`.

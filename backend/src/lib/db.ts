@@ -14,6 +14,51 @@ export type AuthSessionWithUser = {
   replaced_by_session_id: number | null
 }
 
+const deviceSchemaCompatibilityByDb = new WeakMap<object, Promise<void>>()
+
+function isDuplicateColumnError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return message.includes('duplicate column') || message.includes('already exists')
+}
+
+export async function ensureDeviceCommandChannelCompatibility(db: D1Database) {
+  const key = db as unknown as object
+  const inFlight = deviceSchemaCompatibilityByDb.get(key)
+  if (inFlight) {
+    return inFlight
+  }
+
+  const compatibilityTask = (async () => {
+    const dialect = (db as { dialect?: string }).dialect
+    const addColumnSql =
+      dialect === 'mariadb'
+        ? `ALTER TABLE devices ADD COLUMN command_channel VARCHAR(32) NOT NULL DEFAULT 'POWER'`
+        : `ALTER TABLE devices ADD COLUMN command_channel TEXT NOT NULL DEFAULT 'POWER'`
+
+    try {
+      await db.prepare(addColumnSql).run()
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        throw error
+      }
+    }
+
+    await db
+      .prepare(
+        `UPDATE devices
+         SET command_channel = 'POWER'
+         WHERE command_channel IS NULL OR TRIM(command_channel) = ''`,
+      )
+      .run()
+  })().catch((error) => {
+    deviceSchemaCompatibilityByDb.delete(key)
+    throw error
+  })
+
+  deviceSchemaCompatibilityByDb.set(key, compatibilityTask)
+  return compatibilityTask
+}
+
 export async function getUserByEmail(db: D1Database, email: string) {
   return db
     .prepare('SELECT id, email, password_hash FROM users WHERE email = ? LIMIT 1')
@@ -138,10 +183,13 @@ export async function getApiClientByHash(db: D1Database, hash: string) {
 }
 
 export async function listDevicesByPrincipal(db: D1Database, principal: Principal) {
+  await ensureDeviceCommandChannelCompatibility(db)
+
   if (principal.kind === 'user') {
     const result = await db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location
+        `SELECT d.id, d.device_id, d.name, d.location,
+                COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
          WHERE ud.user_id = ?
@@ -153,7 +201,12 @@ export async function listDevicesByPrincipal(db: D1Database, principal: Principa
   }
 
   const result = await db
-    .prepare('SELECT id, device_id, name, location FROM devices ORDER BY id ASC')
+    .prepare(
+      `SELECT id, device_id, name, location,
+              COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
+       FROM devices
+       ORDER BY id ASC`,
+    )
     .all<DeviceRecord>()
   return result.results
 }
@@ -163,10 +216,13 @@ export async function getDeviceByDeviceIdForPrincipal(
   principal: Principal,
   deviceId: string,
 ) {
+  await ensureDeviceCommandChannelCompatibility(db)
+
   if (principal.kind === 'user') {
     return db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location
+        `SELECT d.id, d.device_id, d.name, d.location,
+                COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
          WHERE ud.user_id = ? AND d.device_id = ?
@@ -177,14 +233,28 @@ export async function getDeviceByDeviceIdForPrincipal(
   }
 
   return db
-    .prepare('SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1')
+    .prepare(
+      `SELECT id, device_id, name, location,
+              COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
+       FROM devices
+       WHERE device_id = ?
+       LIMIT 1`,
+    )
     .bind(deviceId)
     .first<DeviceRecord>()
 }
 
 export async function getDeviceByDeviceId(db: D1Database, deviceId: string) {
+  await ensureDeviceCommandChannelCompatibility(db)
+
   return db
-    .prepare('SELECT id, device_id, name, location FROM devices WHERE device_id = ? LIMIT 1')
+    .prepare(
+      `SELECT id, device_id, name, location,
+              COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
+       FROM devices
+       WHERE device_id = ?
+       LIMIT 1`,
+    )
     .bind(deviceId)
     .first<DeviceRecord>()
 }
