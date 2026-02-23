@@ -252,7 +252,11 @@ export function DeviceManager({
                       {device.online == null ? 'ONLINE ?' : device.online ? 'ONLINE' : 'OFFLINE'}
                     </p>
                     <p>
-                      Source: {device.sources.join(', ') || '-'} • Last seen:{' '}
+                      Channels: {device.availableCommandChannels.length ? device.availableCommandChannels.join(', ') : 'POWER'} •
+                      {' '}Auto cmd: {device.suggestedCommandChannel}
+                    </p>
+                    <p>
+                      Source: {device.sources.join(', ') || '-'} • Topic: {device.tasmotaTopic || '-'} • Last seen:{' '}
                       {formatDateTime(device.lastSeenAt)}
                     </p>
                   </div>

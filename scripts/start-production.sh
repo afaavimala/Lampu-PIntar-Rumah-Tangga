@@ -12,7 +12,5 @@ if [[ ! -f "$ROOT_DIR/backend/.env.production" ]]; then
 fi
 
 echo "[start-production] Starting backend (single port production)..."
-(
-  cd "$ROOT_DIR/backend"
-  npm run start
-)
+cd "$ROOT_DIR/backend"
+exec npm run start

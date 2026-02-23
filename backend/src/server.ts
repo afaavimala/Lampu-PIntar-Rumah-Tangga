@@ -145,7 +145,14 @@ async function main() {
     console.log(`[server] Serving frontend from ${config.frontendDistDir}`)
   }
 
-  const shutdown = async () => {
+  let shuttingDown = false
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      return
+    }
+    shuttingDown = true
+    console.log(`[server] Received ${signal}, shutting down...`)
+
     if (timer) {
       clearInterval(timer)
       timer = null
@@ -153,18 +160,34 @@ async function main() {
 
     shutdownRealtimeMqttProxy()
 
-    await new Promise<void>((resolveShutdown) => {
-      server.close(() => resolveShutdown())
-    })
-    await pool.end()
+    const closedGracefully = await Promise.race([
+      new Promise<boolean>((resolveShutdown) => {
+        server.close(() => resolveShutdown(true))
+      }),
+      new Promise<boolean>((resolveTimeout) => {
+        setTimeout(() => resolveTimeout(false), 3_000)
+      }),
+    ])
+
+    if (!closedGracefully) {
+      console.warn('[server] Graceful shutdown timeout. Forcing active HTTP connections to close.')
+      const forceClose = server as { closeAllConnections?: () => void }
+      forceClose.closeAllConnections?.()
+    }
+
+    try {
+      await pool.end()
+    } catch (error) {
+      console.error('[server] Failed to close DB pool cleanly', error)
+    }
     process.exit(0)
   }
 
-  process.on('SIGINT', () => {
-    void shutdown()
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT')
   })
-  process.on('SIGTERM', () => {
-    void shutdown()
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM')
   })
 }
 

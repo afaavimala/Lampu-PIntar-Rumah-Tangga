@@ -26,6 +26,9 @@ export type DiscoveredDevice = {
   deviceId: string
   online: boolean | null
   power: 'ON' | 'OFF' | 'UNKNOWN'
+  availableCommandChannels: string[]
+  suggestedCommandChannel: string
+  tasmotaTopic: string | null
   sources: string[]
   lastSeenAt: string
   suggestedName: string

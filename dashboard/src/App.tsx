@@ -569,6 +569,7 @@ export default function App() {
       await createDevice({
         deviceId: device.deviceId,
         name: device.suggestedName,
+        commandChannel: device.suggestedCommandChannel,
         idempotencyKey: crypto.randomUUID(),
       })
       await hydrateDashboard()
@@ -697,167 +698,169 @@ export default function App() {
 
   return (
     <main className="dashboard-screen">
-      <header className="dashboard-topbar">
-        <div className="topbar-inner">
-          <div className="brand-inline">
-            <BulbIcon className="header-bulb" />
-            <h1>
-              SmartHome <span>IoT</span>
-            </h1>
+      <div className="dashboard-scale-shell">
+        <header className="dashboard-topbar">
+          <div className="topbar-inner">
+            <div className="brand-inline">
+              <BulbIcon className="header-bulb" />
+              <h1>
+                SmartHome <span>IoT</span>
+              </h1>
+            </div>
+            <button
+              type="button"
+              className="profile-pill"
+              onClick={() => void handleLogout()}
+              disabled={loading}
+              title="Logout"
+            >
+              <span>Logout ({viewerLabel})</span>
+              <UserCircleIcon className="profile-icon" />
+            </button>
           </div>
-          <button
-            type="button"
-            className="profile-pill"
-            onClick={() => void handleLogout()}
-            disabled={loading}
-            title="Logout"
-          >
-            <span>Logout ({viewerLabel})</span>
-            <UserCircleIcon className="profile-icon" />
-          </button>
-        </div>
-      </header>
+        </header>
 
-      <section className="dashboard-content">
-        <h2>Lampu Pintar</h2>
-        {globalError ? <p className="error global-error">{globalError}</p> : null}
+        <section className="dashboard-content">
+          <h2>Lampu Pintar</h2>
+          {globalError ? <p className="error global-error">{globalError}</p> : null}
 
-        <div className="dashboard-grid">
-          <section className="lamp-list">
-            {lamps.length === 0 ? (
-              <article className="lamp-empty">
-                <h3>Belum ada device</h3>
-                <p>Tambahkan device baru di panel manajemen untuk mulai kontrol lampu.</p>
-              </article>
-            ) : (
-              lamps.map((lamp) => (
-                <article key={lamp.device.id} className={`lamp-card ${lamp.power === 'ON' ? 'is-on' : 'is-off'}`}>
-                  <div className={`lamp-icon-shell ${lamp.power === 'ON' ? 'on' : 'off'}`}>
-                    <BulbIcon className="lamp-icon" />
-                  </div>
-                  <div className="lamp-meta">
-                    <div className="lamp-meta-head">
-                      <h3>{lamp.title}</h3>
-                      <div className="lamp-card-actions">
-                        <button
-                          type="button"
-                          className="lamp-mini-button"
-                          disabled={loading || deviceBusy}
-                          onClick={() => handleStartEditDevice(lamp.device.id)}
-                          aria-label={`Edit ${lamp.title}`}
-                          title={`Edit ${lamp.title}`}
-                        >
-                          <EditIcon className="lamp-mini-icon" />
-                        </button>
-                        <button
-                          type="button"
-                          className="lamp-mini-button danger"
-                          disabled={loading || deviceBusy}
-                          onClick={() => void handleDeleteDevice(lamp.device)}
-                          aria-label={`Hapus ${lamp.title}`}
-                          title={`Hapus ${lamp.title}`}
-                        >
-                          <DeleteIcon className="lamp-mini-icon" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="lamp-subtitle">
-                      {lamp.device.id}
-                      {lamp.device.location ? ` • ${lamp.device.location}` : ''}
-                      {` • cmd: ${lamp.device.commandChannel}`}
-                    </p>
-                    <p className={`lamp-power ${lamp.power === 'ON' ? 'on' : 'off'}`}>{lamp.power}</p>
-                    <p className="lamp-statusline">
-                      {lamp.online ? 'ONLINE' : 'OFFLINE'} • source: {lamp.source} • update: {formatDateTime(lamp.updatedAt)}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className={`lamp-switch ${lamp.power === 'ON' ? 'on' : 'off'}`}
-                    onClick={() => void handleToggleLamp(lamp)}
-                    disabled={loading || deviceBusy || !!pendingToggleByDevice[lamp.device.id]}
-                    aria-label={`${lamp.title} switch`}
-                  >
-                    <span className="lamp-switch-label">{lamp.power}</span>
-                    <span className="lamp-switch-knob" />
-                  </button>
+          <div className="dashboard-grid">
+            <section className="lamp-list">
+              {lamps.length === 0 ? (
+                <article className="lamp-empty">
+                  <h3>Belum ada device</h3>
+                  <p>Tambahkan device baru di panel manajemen untuk mulai kontrol lampu.</p>
                 </article>
-              ))
-            )}
-          </section>
+              ) : (
+                lamps.map((lamp) => (
+                  <article key={lamp.device.id} className={`lamp-card ${lamp.power === 'ON' ? 'is-on' : 'is-off'}`}>
+                    <div className={`lamp-icon-shell ${lamp.power === 'ON' ? 'on' : 'off'}`}>
+                      <BulbIcon className="lamp-icon" />
+                    </div>
+                    <div className="lamp-meta">
+                      <div className="lamp-meta-head">
+                        <h3>{lamp.title}</h3>
+                        <div className="lamp-card-actions">
+                          <button
+                            type="button"
+                            className="lamp-mini-button"
+                            disabled={loading || deviceBusy}
+                            onClick={() => handleStartEditDevice(lamp.device.id)}
+                            aria-label={`Edit ${lamp.title}`}
+                            title={`Edit ${lamp.title}`}
+                          >
+                            <EditIcon className="lamp-mini-icon" />
+                          </button>
+                          <button
+                            type="button"
+                            className="lamp-mini-button danger"
+                            disabled={loading || deviceBusy}
+                            onClick={() => void handleDeleteDevice(lamp.device)}
+                            aria-label={`Hapus ${lamp.title}`}
+                            title={`Hapus ${lamp.title}`}
+                          >
+                            <DeleteIcon className="lamp-mini-icon" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="lamp-subtitle">
+                        {lamp.device.id}
+                        {lamp.device.location ? ` • ${lamp.device.location}` : ''}
+                        {` • cmd: ${lamp.device.commandChannel}`}
+                      </p>
+                      <p className={`lamp-power ${lamp.power === 'ON' ? 'on' : 'off'}`}>{lamp.power}</p>
+                      <p className="lamp-statusline">
+                        {lamp.online ? 'ONLINE' : 'OFFLINE'} • update: {formatDateTime(lamp.updatedAt)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={`lamp-switch ${lamp.power === 'ON' ? 'on' : 'off'}`}
+                      onClick={() => void handleToggleLamp(lamp)}
+                      disabled={loading || deviceBusy || !!pendingToggleByDevice[lamp.device.id]}
+                      aria-label={`${lamp.title} switch`}
+                    >
+                      <span className="lamp-switch-label">{lamp.power}</span>
+                      <span className="lamp-switch-knob" />
+                    </button>
+                  </article>
+                ))
+              )}
+            </section>
 
-          <aside className="monitor-card">
-            <h3>Status Monitoring</h3>
-            <div className="monitor-row">
-              <span>Uptime</span>
-              <strong>{formatUptime(uptimeSeconds)}</strong>
-            </div>
-            <div className="monitor-row">
-              <span>Total Device</span>
-              <strong>{lamps.length}</strong>
-            </div>
-            <div className="monitor-row">
-              <span>Online Device</span>
-              <strong>{onlineDeviceCount}</strong>
-            </div>
-            <div className="monitor-row">
-              <span>Last Update</span>
-              <strong>{formatDateTime(latestDeviceUpdate)}</strong>
-            </div>
-            <div className="monitor-row signal">
-              <p>WiFi Signal</p>
-              <div className="signal-content">
-                <WifiIcon className="wifi-icon" />
-                <div className="signal-bars" aria-hidden="true">
-                  <span className="bar b1" />
-                  <span className="bar b2" />
-                  <span className="bar b3" />
-                  <span className="bar b4" />
-                  <span className="bar b5" />
-                  <span className="bar b6" />
-                  <span className="bar b7" />
+            <aside className="monitor-card">
+              <h3>Status Monitoring</h3>
+              <div className="monitor-row">
+                <span>Uptime</span>
+                <strong>{formatUptime(uptimeSeconds)}</strong>
+              </div>
+              <div className="monitor-row">
+                <span>Total Device</span>
+                <strong>{lamps.length}</strong>
+              </div>
+              <div className="monitor-row">
+                <span>Online Device</span>
+                <strong>{onlineDeviceCount}</strong>
+              </div>
+              <div className="monitor-row">
+                <span>Last Update</span>
+                <strong>{formatDateTime(latestDeviceUpdate)}</strong>
+              </div>
+              <div className="monitor-row signal">
+                <p>WiFi Signal</p>
+                <div className="signal-content">
+                  <WifiIcon className="wifi-icon" />
+                  <div className="signal-bars" aria-hidden="true">
+                    <span className="bar b1" />
+                    <span className="bar b2" />
+                    <span className="bar b3" />
+                    <span className="bar b4" />
+                    <span className="bar b5" />
+                    <span className="bar b6" />
+                    <span className="bar b7" />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="monitor-row connection">
-              <span>Connection</span>
-              <strong className={isConnected ? 'connected' : 'disconnected'}>
-                {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
-              </strong>
-            </div>
-          </aside>
-        </div>
+              <div className="monitor-row connection">
+                <span>Connection</span>
+                <strong className={isConnected ? 'connected' : 'disconnected'}>
+                  {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+                </strong>
+              </div>
+            </aside>
+          </div>
 
-        <section className="management-grid">
-          <DeviceManager
-            onCreateDevice={handleCreateDevice}
-            onUpdateDevice={handleUpdateDevice}
-            onCancelEdit={() => setEditingDeviceId(null)}
-            editingDevice={editingDevice}
-            editFocusNonce={deviceEditFocusNonce}
-            onDiscover={handleDiscoverDevices}
-            onClaimDiscovered={handleClaimDiscoveredDevice}
-            discoveredDevices={discoveredDevices}
-            discovering={discovering}
-            claimingDeviceId={claimingDeviceId}
-            discoveryScannedAt={discoveryScannedAt}
-            discoveryWaitMs={discoveryWaitMs}
-            busy={deviceBusy}
-          />
-          <ScheduleManager
-            devices={sortedDevices}
-            schedules={schedules}
-            selectedScheduleId={selectedScheduleId}
-            scheduleRuns={scheduleRuns}
-            onSelectSchedule={handleSelectSchedule}
-            onCreate={handleCreateSchedule}
-            onToggleEnabled={handleToggleScheduleEnabled}
-            onDelete={handleDeleteSchedule}
-            onUpdate={handleUpdateSchedule}
-            busy={scheduleBusy}
-          />
+          <section className="management-grid">
+            <DeviceManager
+              onCreateDevice={handleCreateDevice}
+              onUpdateDevice={handleUpdateDevice}
+              onCancelEdit={() => setEditingDeviceId(null)}
+              editingDevice={editingDevice}
+              editFocusNonce={deviceEditFocusNonce}
+              onDiscover={handleDiscoverDevices}
+              onClaimDiscovered={handleClaimDiscoveredDevice}
+              discoveredDevices={discoveredDevices}
+              discovering={discovering}
+              claimingDeviceId={claimingDeviceId}
+              discoveryScannedAt={discoveryScannedAt}
+              discoveryWaitMs={discoveryWaitMs}
+              busy={deviceBusy}
+            />
+            <ScheduleManager
+              devices={sortedDevices}
+              schedules={schedules}
+              selectedScheduleId={selectedScheduleId}
+              scheduleRuns={scheduleRuns}
+              onSelectSchedule={handleSelectSchedule}
+              onCreate={handleCreateSchedule}
+              onToggleEnabled={handleToggleScheduleEnabled}
+              onDelete={handleDeleteSchedule}
+              onUpdate={handleUpdateSchedule}
+              busy={scheduleBusy}
+            />
+          </section>
         </section>
-      </section>
+      </div>
     </main>
   )
 }

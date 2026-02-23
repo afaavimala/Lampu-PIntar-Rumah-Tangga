@@ -25,21 +25,46 @@ function uniqueValues(values: string[]) {
 
 const TASMOTA_COMMAND_CHANNEL_PATTERN = /^POWER(?:[1-9]\d?)?$/i
 
-export function normalizeTasmotaCommandChannel(value: unknown): string {
+function normalizeTasmotaCommandChannelValue(value: unknown) {
   if (typeof value !== 'string') {
-    return 'POWER'
+    return null
   }
 
   const normalized = value.trim().toUpperCase()
-  if (!normalized) {
-    return 'POWER'
-  }
-
-  if (!TASMOTA_COMMAND_CHANNEL_PATTERN.test(normalized)) {
-    return 'POWER'
+  if (!normalized || !TASMOTA_COMMAND_CHANNEL_PATTERN.test(normalized)) {
+    return null
   }
 
   return normalized
+}
+
+function isIndexedTasmotaCommandChannel(channel: string) {
+  return /^POWER([1-9]\d*)$/.test(channel)
+}
+
+export function sortTasmotaCommandChannels(channels: string[]) {
+  return uniqueValues(
+    channels
+      .map((channel) => normalizeTasmotaCommandChannelValue(channel))
+      .filter((channel): channel is string => !!channel),
+  ).sort((left, right) => {
+    const leftIsPower = left === 'POWER'
+    const rightIsPower = right === 'POWER'
+    if (leftIsPower && !rightIsPower) return -1
+    if (!leftIsPower && rightIsPower) return 1
+
+    const leftIndex = left.match(/^POWER([1-9]\d*)$/)
+    const rightIndex = right.match(/^POWER([1-9]\d*)$/)
+    if (leftIndex && rightIndex) {
+      return Number(leftIndex[1]) - Number(rightIndex[1])
+    }
+
+    return left.localeCompare(right)
+  })
+}
+
+export function normalizeTasmotaCommandChannel(value: unknown): string {
+  return normalizeTasmotaCommandChannelValue(value) ?? 'POWER'
 }
 
 export function normalizeTasmotaSwitchValue(value: unknown): NormalizedSwitchPower | null {
@@ -84,6 +109,60 @@ export function extractTasmotaPowerFromObject(payload: Record<string, unknown>) 
   }
 
   return null
+}
+
+export function extractTasmotaCommandChannelsFromObject(payload: Record<string, unknown>) {
+  const channels: string[] = []
+
+  for (const [key, value] of Object.entries(payload)) {
+    const normalizedKey = key.trim().toUpperCase()
+    const normalizedChannel = normalizeTasmotaCommandChannelValue(normalizedKey)
+    if (!normalizedChannel) {
+      continue
+    }
+
+    if (normalizedChannel === 'POWER') {
+      const normalizedSwitch = normalizeTasmotaSwitchValue(value)
+      if (normalizedSwitch) {
+        channels.push('POWER')
+        continue
+      }
+
+      if (typeof value === 'string') {
+        const compact = value.trim()
+        if (/^[01]+$/.test(compact)) {
+          if (compact.length <= 1) {
+            channels.push('POWER')
+          } else {
+            for (let index = 1; index <= compact.length; index += 1) {
+              channels.push(`POWER${index}`)
+            }
+          }
+        }
+      }
+      continue
+    }
+
+    if (normalizeTasmotaSwitchValue(value)) {
+      channels.push(normalizedChannel)
+    }
+  }
+
+  return sortTasmotaCommandChannels(channels)
+}
+
+export function pickSuggestedTasmotaCommandChannel(channels: string[]) {
+  const normalized = sortTasmotaCommandChannels(channels)
+  const indexed = normalized.filter((channel) => isIndexedTasmotaCommandChannel(channel))
+  if (indexed.length > 0) {
+    return indexed[0]
+  }
+
+  if (normalized.includes('POWER')) {
+    return 'POWER'
+  }
+
+  return 'POWER'
 }
 
 export function parseTasmotaPowerPayload(payload: string): NormalizedSwitchPower | null {
@@ -202,6 +281,10 @@ export function getTasmotaDiscoverySubscribeTopics() {
     '+/stat/RESULT',
     'stat/+/POWER',
     '+/stat/POWER',
+    'stat/+/STATUS',
+    '+/stat/STATUS',
+    'stat/+/STATUS11',
+    '+/stat/STATUS11',
   ])
 }
 

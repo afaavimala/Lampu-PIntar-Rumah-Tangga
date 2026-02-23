@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCommandPublishTargets,
   buildLwtSnapshotSubscribeTopics,
+  extractTasmotaCommandChannelsFromObject,
   extractTasmotaDeviceIdFromTopic,
   extractLwtDeviceIdFromTopic,
   getTasmotaDiscoverySubscribeTopics,
   getRealtimeSubscribeTopics,
   normalizeTasmotaSwitchValue,
+  pickSuggestedTasmotaCommandChannel,
   parseTasmotaPowerPayload,
   parseRealtimeMqttMessage,
 } from '../src/lib/mqtt-compat'
@@ -114,6 +116,10 @@ describe('mqtt compatibility helpers', () => {
     expect(topics).toContain('+/tele/STATE')
     expect(topics).toContain('stat/+/RESULT')
     expect(topics).toContain('+/stat/RESULT')
+    expect(topics).toContain('stat/+/STATUS')
+    expect(topics).toContain('+/stat/STATUS')
+    expect(topics).toContain('stat/+/STATUS11')
+    expect(topics).toContain('+/stat/STATUS11')
   })
 
   it('normalizes and parses tasmota power payload variants', () => {
@@ -134,5 +140,25 @@ describe('mqtt compatibility helpers', () => {
     expect(extractTasmotaDeviceIdFromTopic('tele/lamp-b/LWT', 'tele')).toBe('lamp-b')
     expect(extractTasmotaDeviceIdFromTopic('lamp-b/tele/LWT', 'tele')).toBe('lamp-b')
     expect(extractTasmotaDeviceIdFromTopic('invalid/topic', 'tele')).toBeNull()
+  })
+
+  it('extracts available power entities from status payloads', () => {
+    expect(extractTasmotaCommandChannelsFromObject({ POWER: 'ON' })).toEqual(['POWER'])
+    expect(extractTasmotaCommandChannelsFromObject({ POWER: '0000' })).toEqual([
+      'POWER1',
+      'POWER2',
+      'POWER3',
+      'POWER4',
+    ])
+    expect(extractTasmotaCommandChannelsFromObject({ POWER2: 'ON', POWER4: 'OFF' })).toEqual([
+      'POWER2',
+      'POWER4',
+    ])
+  })
+
+  it('suggests first indexed channel for multi-channel tasmota devices', () => {
+    expect(pickSuggestedTasmotaCommandChannel(['POWER'])).toBe('POWER')
+    expect(pickSuggestedTasmotaCommandChannel(['POWER3', 'POWER1', 'POWER2'])).toBe('POWER1')
+    expect(pickSuggestedTasmotaCommandChannel([])).toBe('POWER')
   })
 })

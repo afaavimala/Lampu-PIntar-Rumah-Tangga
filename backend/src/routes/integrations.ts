@@ -154,14 +154,21 @@ integrationRoutes.get('/devices/discovery', requireAuth(['read']), async (c) => 
     const key = item.deviceId.toLowerCase()
     const alreadyLinked = ownedDeviceIds.has(key)
     const alreadyRegistered = registeredDeviceIds.has(key)
+    const suggestedName = item.friendlyName?.trim() || deriveSuggestedDeviceName(item.deviceId)
+    const availableCommandChannels =
+      item.commandChannels.length > 0 ? item.commandChannels : [item.suggestedCommandChannel || 'POWER']
+    const suggestedCommandChannel = item.suggestedCommandChannel || availableCommandChannels[0] || 'POWER'
 
     return {
       deviceId: item.deviceId,
       online: item.online,
       power: item.power,
+      availableCommandChannels,
+      suggestedCommandChannel,
+      tasmotaTopic: item.tasmotaTopic,
       sources: item.sources,
       lastSeenAt: new Date(item.lastSeenAt).toISOString(),
-      suggestedName: deriveSuggestedDeviceName(item.deviceId),
+      suggestedName,
       alreadyLinked,
       alreadyRegistered,
     }

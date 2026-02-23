@@ -1,9 +1,13 @@
 import {
   buildLwtSnapshotSubscribeTopics,
+  extractTasmotaCommandChannelsFromObject,
+  extractTasmotaPowerFromObject,
   extractLwtDeviceIdFromTopic,
   extractTasmotaDeviceIdFromTopic,
   getTasmotaDiscoverySubscribeTopics,
+  pickSuggestedTasmotaCommandChannel,
   parseTasmotaPowerPayload,
+  sortTasmotaCommandChannels,
   type NormalizedSwitchPower,
 } from './mqtt-compat'
 
@@ -467,7 +471,7 @@ export async function readLwtSnapshotOverWs(input: {
       try {
         packet = await nextPacket(() => true, Math.min(remaining, 200))
       } catch {
-        break
+        continue
       }
 
       if (packetType(packet) !== PUBLISH_PACKET_TYPE) {
@@ -510,8 +514,58 @@ export type TasmotaDiscoveredDevice = {
   deviceId: string
   online: boolean | null
   power: NormalizedSwitchPower | 'UNKNOWN'
+  commandChannels: string[]
+  suggestedCommandChannel: string
+  friendlyName: string | null
+  tasmotaTopic: string | null
   sources: string[]
   lastSeenAt: number
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function parseJsonRecord(payload: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(payload))
+  } catch {
+    return null
+  }
+}
+
+function parsePowerChannelFromTopicSuffix(suffix: string) {
+  const normalized = suffix.trim().toUpperCase()
+  if (normalized === 'POWER' || /^POWER([1-9]\d*)$/.test(normalized)) {
+    return normalized
+  }
+  return null
+}
+
+function extractFriendlyName(value: unknown) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      continue
+    }
+    const trimmed = entry.trim()
+    if (trimmed) {
+      return trimmed
+    }
+  }
+
+  return null
 }
 
 export async function readTasmotaDiscoveryOverWs(input: {
@@ -533,8 +587,11 @@ export async function readTasmotaDiscoveryOverWs(input: {
   const queue: Uint8Array[] = []
   let queueNotifier: (() => void) | null = null
   let packetBuffer = new Uint8Array(0)
+  let nextPacketId = 1
 
   const discoveredByDeviceId = new Map<string, TasmotaDiscoveredDevice>()
+  const statusRequestedByDeviceId = new Set<string>()
+  let scanDeadline = 0
 
   const touchDevice = (deviceId: string, source: string) => {
     const key = deviceId.trim().toLowerCase()
@@ -556,6 +613,10 @@ export async function readTasmotaDiscoveryOverWs(input: {
       deviceId: deviceId.trim(),
       online: null,
       power: 'UNKNOWN',
+      commandChannels: [],
+      suggestedCommandChannel: 'POWER',
+      friendlyName: null,
+      tasmotaTopic: null,
       sources: [source],
       lastSeenAt: currentTs,
     }
@@ -618,6 +679,116 @@ export async function readTasmotaDiscoveryOverWs(input: {
     throw new Error('Timed out waiting for MQTT packet')
   }
 
+  function mergeCandidateChannels(candidate: TasmotaDiscoveredDevice, channels: string[]) {
+    if (channels.length === 0) {
+      return
+    }
+
+    candidate.commandChannels = sortTasmotaCommandChannels([...candidate.commandChannels, ...channels])
+    candidate.suggestedCommandChannel = pickSuggestedTasmotaCommandChannel(candidate.commandChannels)
+  }
+
+  function applyPowerPayload(
+    candidate: TasmotaDiscoveredDevice,
+    suffix: string,
+    payload: string,
+    parsedRecord: Record<string, unknown> | null,
+  ) {
+    const channelFromTopic = parsePowerChannelFromTopicSuffix(suffix)
+    if (channelFromTopic) {
+      mergeCandidateChannels(candidate, [channelFromTopic])
+    }
+
+    const power = parsedRecord ? extractTasmotaPowerFromObject(parsedRecord) : parseTasmotaPowerPayload(payload)
+    if (power) {
+      candidate.power = power
+    }
+
+    if (parsedRecord) {
+      const channelsFromPayload = extractTasmotaCommandChannelsFromObject(parsedRecord)
+      mergeCandidateChannels(candidate, channelsFromPayload)
+    }
+  }
+
+  function applyStatusPayload(
+    candidate: TasmotaDiscoveredDevice,
+    suffix: string,
+    parsedRecord: Record<string, unknown> | null,
+  ) {
+    if (!parsedRecord) {
+      return
+    }
+
+    const status = asRecord(parsedRecord.Status)
+    const statusSts = asRecord(parsedRecord.StatusSTS)
+
+    if (status) {
+      mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(status))
+
+      const topic = typeof status.Topic === 'string' ? status.Topic.trim() : ''
+      if (topic) {
+        candidate.tasmotaTopic = topic
+      }
+
+      const friendlyName = extractFriendlyName(status.FriendlyName)
+      if (friendlyName) {
+        candidate.friendlyName = friendlyName
+      }
+
+      const statusPower = extractTasmotaPowerFromObject(status)
+      if (statusPower) {
+        candidate.power = statusPower
+      }
+    }
+
+    if (statusSts) {
+      mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(statusSts))
+      const statusStsPower = extractTasmotaPowerFromObject(statusSts)
+      if (statusStsPower) {
+        candidate.power = statusStsPower
+      }
+    }
+
+    if (suffix === 'status11') {
+      mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(parsedRecord))
+      const status11Power = extractTasmotaPowerFromObject(parsedRecord)
+      if (status11Power) {
+        candidate.power = status11Power
+      }
+    }
+  }
+
+  async function requestStatusSnapshot(deviceId: string) {
+    const key = deviceId.trim().toLowerCase()
+    if (!key || statusRequestedByDeviceId.has(key)) {
+      return
+    }
+
+    statusRequestedByDeviceId.add(key)
+    const packetId = nextPacketId
+    nextPacketId = (nextPacketId % 65535) + 1
+
+    ws.send(
+      buildPublishQos1Packet({
+        topic: `cmnd/${deviceId}/STATUS`,
+        payload: '0',
+        packetId,
+      }),
+    )
+
+    try {
+      await nextPacket(
+        (packet) => packetType(packet) === PUBACK_PACKET_TYPE && readPubAckPacketId(packet) === packetId,
+        Math.min(timeoutMs, 1_500),
+      )
+    } catch {
+      // keep discovery resilient even if broker/device does not PUBACK quickly
+    }
+
+    const extensionMs = Math.min(3_000, Math.max(1_000, snapshotWaitMs))
+    scanDeadline = Math.max(scanDeadline, Date.now()) + extensionMs
+  }
+
   try {
     ws.send(
       buildConnectPacket({
@@ -639,10 +810,10 @@ export async function readTasmotaDiscoveryOverWs(input: {
       (packet) => packetType(packet) === SUBACK_PACKET_TYPE && readSubAckPacketId(packet) === subscribePacketId,
       timeoutMs,
     )
+    scanDeadline = Date.now() + snapshotWaitMs
 
-    const snapshotDeadline = Date.now() + snapshotWaitMs
-    while (Date.now() < snapshotDeadline) {
-      const remaining = snapshotDeadline - Date.now()
+    while (Date.now() < scanDeadline) {
+      const remaining = scanDeadline - Date.now()
       if (remaining <= 0) {
         break
       }
@@ -651,7 +822,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
       try {
         packet = await nextPacket(() => true, Math.min(remaining, 200))
       } catch {
-        break
+        continue
       }
 
       if (packetType(packet) !== PUBLISH_PACKET_TYPE) {
@@ -686,6 +857,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
         } else if (normalized === 'OFFLINE') {
           candidate.online = false
         }
+        await requestStatusSnapshot(deviceId)
         continue
       }
 
@@ -699,10 +871,9 @@ export async function readTasmotaDiscoveryOverWs(input: {
           continue
         }
 
-        const power = parseTasmotaPowerPayload(decoded.payload)
-        if (power) {
-          candidate.power = power
-        }
+        const parsedRecord = parseJsonRecord(decoded.payload)
+        applyPowerPayload(candidate, 'STATE', decoded.payload, parsedRecord)
+        await requestStatusSnapshot(deviceId)
         continue
       }
 
@@ -716,10 +887,25 @@ export async function readTasmotaDiscoveryOverWs(input: {
           continue
         }
 
-        const power = parseTasmotaPowerPayload(decoded.payload)
-        if (power) {
-          candidate.power = power
+        const parsedRecord = parseJsonRecord(decoded.payload)
+        applyPowerPayload(candidate, parts[2], decoded.payload, parsedRecord)
+        await requestStatusSnapshot(deviceId)
+        continue
+      }
+
+      if (suffix === 'status' || suffix === 'status11') {
+        const deviceId = extractTasmotaDeviceIdFromTopic(decoded.topic, 'stat')
+        if (!deviceId) {
+          continue
         }
+
+        const candidate = touchDevice(deviceId, suffix)
+        if (!candidate) {
+          continue
+        }
+
+        const parsedRecord = parseJsonRecord(decoded.payload)
+        applyStatusPayload(candidate, suffix, parsedRecord)
       }
     }
 
@@ -735,6 +921,8 @@ export async function readTasmotaDiscoveryOverWs(input: {
       .slice(0, maxDevices)
       .map((item) => ({
         ...item,
+        commandChannels: sortTasmotaCommandChannels(item.commandChannels),
+        suggestedCommandChannel: pickSuggestedTasmotaCommandChannel(item.commandChannels),
         sources: item.sources.slice().sort((a, b) => a.localeCompare(b)),
       }))
 

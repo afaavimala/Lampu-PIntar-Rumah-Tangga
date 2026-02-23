@@ -283,6 +283,27 @@ body::before {
   margin-top: 0.15rem;
 }
 
+.dashboard-screen {
+  --dashboard-scale: 1;
+  overflow-x: hidden;
+  min-height: 100dvh;
+}
+
+.dashboard-scale-shell {
+  zoom: var(--dashboard-scale);
+  width: 100%;
+  min-height: 100dvh;
+}
+
+@supports not (zoom: 1) {
+  .dashboard-scale-shell {
+    transform: scale(var(--dashboard-scale));
+    transform-origin: top center;
+    width: 100%;
+    min-height: 100dvh;
+  }
+}
+
 .dashboard-topbar {
   width: 100%;
   margin-top: 0;
@@ -295,7 +316,7 @@ body::before {
 }
 
 .topbar-inner {
-  width: min(1120px, calc(100% - clamp(2.2rem, 3.8vw, 3.2rem)));
+  width: min(1560px, calc(100% - clamp(2.2rem, 3.8vw, 3.8rem)));
   margin: 0 auto;
   min-height: clamp(84px, 8.8vw, 120px);
   display: flex;
@@ -363,7 +384,7 @@ body::before {
 }
 
 .dashboard-content {
-  width: min(1120px, calc(100% - 5.8rem));
+  width: min(1560px, calc(100% - clamp(2.8rem, 4.5vw, 5.2rem)));
   margin: 3.4rem auto 0;
 }
 
@@ -380,8 +401,8 @@ body::before {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 430px;
-  gap: 1.75rem;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 24vw, 460px);
+  gap: clamp(1.4rem, 2vw, 1.9rem);
   align-items: start;
 }
 
@@ -426,13 +447,16 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.09),
     0 14px 24px rgba(4, 10, 40, 0.42);
   display: grid;
-  grid-template-columns: 96px 1fr auto;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  grid-template-areas: 'icon meta switch';
   align-items: center;
-  gap: 1.1rem;
+  column-gap: 1.1rem;
+  row-gap: 0.9rem;
   position: relative;
 }
 
 .lamp-icon-shell {
+  grid-area: icon;
   width: 92px;
   height: 92px;
   border-radius: 50%;
@@ -457,6 +481,7 @@ body::before {
 }
 
 .lamp-meta {
+  grid-area: meta;
   min-width: 0;
 }
 
@@ -547,21 +572,34 @@ body::before {
 }
 
 .lamp-switch {
-  width: 248px;
+  --switch-width: 248px;
+  --switch-knob-size: 70px;
+  --switch-pad: 8px;
+  --switch-travel: calc(var(--switch-width) - var(--switch-knob-size) - var(--switch-pad) - var(--switch-pad));
+  grid-area: switch;
+  width: var(--switch-width);
   height: 86px;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0 9px 0 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  display: block;
   cursor: pointer;
-  transition: filter 0.15s ease;
+  transition:
+    background 0.24s ease,
+    border-color 0.24s ease,
+    filter 0.15s ease;
 }
 
 .lamp-switch:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.lamp-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(119, 210, 255, 0.28);
 }
 
 .lamp-switch.on {
@@ -574,19 +612,49 @@ body::before {
 }
 
 .lamp-switch-label {
-  margin-left: 2.25rem;
+  position: absolute;
+  top: 50%;
+  left: 2.2rem;
+  transform: translateY(-50%);
   color: #ebf3ff;
   font-size: 4.2rem;
   font-weight: 600;
   line-height: 1;
+  transition: left 0.24s ease, right 0.24s ease;
+  pointer-events: none;
+}
+
+.lamp-switch.on .lamp-switch-label {
+  left: 2.2rem;
+  right: auto;
+}
+
+.lamp-switch.off .lamp-switch-label {
+  left: auto;
+  right: 2.2rem;
 }
 
 .lamp-switch-knob {
-  width: 70px;
-  height: 70px;
+  position: absolute;
+  top: 50%;
+  left: var(--switch-pad);
+  width: var(--switch-knob-size);
+  height: var(--switch-knob-size);
   border-radius: 50%;
   background: #f6f7fc;
-  box-shadow: inset 0 -2px 1px rgba(0, 0, 0, 0.09);
+  box-shadow:
+    inset 0 -2px 1px rgba(0, 0, 0, 0.09),
+    0 1px 4px rgba(0, 0, 0, 0.24);
+  transform: translate(0, -50%);
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.lamp-switch.on .lamp-switch-knob {
+  transform: translate(var(--switch-travel), -50%);
+}
+
+.lamp-switch.off .lamp-switch-knob {
+  transform: translate(0, -50%);
 }
 
 .monitor-card {
@@ -696,12 +764,11 @@ body::before {
   border-bottom: 0;
   padding-bottom: 0.2rem;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) fit-content(60%);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 0.8rem;
   min-inline-size: 0;
   min-width: 0;
-  overflow: hidden;
 }
 
 .monitor-row.connection span {
@@ -722,11 +789,9 @@ body::before {
   justify-self: end;
   text-align: right;
   min-width: 0;
-  max-width: 16ch;
-  max-width: min(60%, 16ch);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .connected {
@@ -1070,6 +1135,10 @@ body::before {
 }
 
 @media (max-width: 1180px) {
+  .dashboard-screen {
+    --dashboard-scale: 1;
+  }
+
   .dashboard-content {
     width: calc(100% - 2.8rem);
     margin-top: 2rem;
@@ -1087,8 +1156,19 @@ body::before {
 
   .lamp-card {
     min-height: 142px;
-    grid-template-columns: 74px 1fr auto;
+    grid-template-columns: 74px minmax(0, 1fr);
+    grid-template-areas:
+      'icon meta'
+      'switch switch';
+    align-items: start;
+    row-gap: 0.72rem;
     padding: 1rem 1.05rem;
+  }
+
+  .lamp-meta {
+    display: grid;
+    grid-auto-rows: max-content;
+    row-gap: 0.2rem;
   }
 
   .lamp-icon-shell {
@@ -1106,20 +1186,40 @@ body::before {
     font-size: clamp(1.12rem, 2.25vw, 1.48rem);
   }
 
+  .lamp-meta-head {
+    padding-right: 0;
+    align-items: flex-start;
+    margin-bottom: 0.04rem;
+  }
+
+  .lamp-card-actions {
+    position: static;
+    top: auto;
+    right: auto;
+    z-index: auto;
+    margin-left: auto;
+    gap: 0.32rem;
+  }
+
+  .lamp-subtitle,
+  .lamp-power,
+  .lamp-statusline {
+    margin: 0;
+  }
+
   .lamp-switch {
-    width: 164px;
+    --switch-width: 268px;
+    width: var(--switch-width);
     height: 64px;
-    padding-right: 8px;
+    --switch-knob-size: 48px;
+    --switch-pad: 8px;
+    justify-self: start;
+    align-self: start;
+    margin-top: 0;
   }
 
   .lamp-switch-label {
-    margin-left: 1.4rem;
     font-size: 1.9rem;
-  }
-
-  .lamp-switch-knob {
-    width: 48px;
-    height: 48px;
   }
 
   .monitor-card h3 {
@@ -1181,8 +1281,12 @@ body::before {
 
   .lamp-card {
     min-height: 130px;
-    grid-template-columns: 58px 1fr auto;
-    gap: 0.8rem;
+    grid-template-columns: 58px minmax(0, 1fr);
+    grid-template-areas:
+      'icon meta'
+      'switch switch';
+    column-gap: 0.8rem;
+    row-gap: 0.64rem;
     padding: 0.9rem;
   }
 
@@ -1225,19 +1329,17 @@ body::before {
   }
 
   .lamp-switch {
-    width: 134px;
+    --switch-width: 220px;
+    width: var(--switch-width);
     height: 52px;
-    padding-right: 6px;
+    --switch-knob-size: 40px;
+    --switch-pad: 6px;
+    justify-self: start;
+    margin-top: 0;
   }
 
   .lamp-switch-label {
-    margin-left: 1.2rem;
     font-size: 1.6rem;
-  }
-
-  .lamp-switch-knob {
-    width: 40px;
-    height: 40px;
   }
 
   .monitor-card h3 {
@@ -1391,9 +1493,13 @@ body::before {
 
   .lamp-card {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'icon'
+      'meta'
+      'switch';
     justify-items: center;
     text-align: center;
-    gap: 0.72rem;
+    row-gap: 0.68rem;
   }
 
   .lamp-meta {
@@ -1406,13 +1512,14 @@ body::before {
   }
 
   .lamp-card-actions {
-    top: 0.55rem;
-    right: 0.55rem;
+    margin-left: 0;
+    justify-content: center;
   }
 
   .lamp-switch {
-    width: 100%;
-    max-width: 220px;
+    width: min(100%, var(--switch-width));
+    justify-self: center;
+    margin-top: 0;
   }
 
   .device-discovery-head {
