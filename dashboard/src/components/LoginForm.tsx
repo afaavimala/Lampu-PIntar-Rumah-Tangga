@@ -84,20 +84,6 @@ export function LoginForm({ loading, error, onLogin }: LoginFormProps) {
             <button type="submit" disabled={loading} className="login-button">
               {loading ? 'LOADING...' : 'LOGIN'}
             </button>
-
-            <p className="forgot-line">
-              <span />
-              <a href="#" onClick={(event) => event.preventDefault()}>
-                Forgot Password?
-              </a>
-              <span />
-            </p>
-            <p className="register-line">
-              Don&apos;t have an account?{' '}
-              <a href="#" onClick={(event) => event.preventDefault()}>
-                Register
-              </a>
-            </p>
           </form>
         </div>
       </div>

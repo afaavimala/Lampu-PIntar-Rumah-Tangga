@@ -19,6 +19,7 @@ copy_if_missing "$ROOT_DIR/dashboard/.env.example" "$FRONTEND_ENV_FILE" "env-loc
 copy_if_missing "$ROOT_DIR/backend/.dev.vars.local.example" "$WORKER_DEV_VARS_FILE" "env-local"
 
 apply_env_mappings "env-local" "$BACKEND_ENV_FILE" \
+  "HOST:BACKEND_HOST" \
   "PORT:BACKEND_PORT" \
   "SERVE_DASHBOARD:BACKEND_SERVE_DASHBOARD" \
   "FRONTEND_DIST_DIR:BACKEND_FRONTEND_DIST_DIR" \

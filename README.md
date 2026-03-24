@@ -176,9 +176,11 @@ cp .env.example .env
 ```
 2. Set nilai penting di `.env`:
 - `BACKEND_SERVE_DASHBOARD=true`
+- `BACKEND_HOST=0.0.0.0` agar bisa diakses dari device lain dalam jaringan
 - `BACKEND_PORT` (misal `8080`)
 - seluruh `BACKEND_DB_*` untuk DB production
 - `BACKEND_SEED_ADMIN_PASSWORD` wajib diganti
+- `BACKEND_CORS_ORIGINS=*` jika frontend/API diakses dari origin beragam
 - `FRONTEND_VITE_API_BASE_URL=` tetap kosong untuk mode same-origin single port
 3. Generate env production.
 ```bash
@@ -195,7 +197,8 @@ npm run start:production
 ```
 
 Verifikasi:
-- App: `http://127.0.0.1:<BACKEND_PORT>`
+- App lokal mesin server: `http://127.0.0.1:<BACKEND_PORT>`
+- App dari device lain: `http://<IP-LAN-SERVER>:<BACKEND_PORT>`
 - Health (kanonik): `GET /api/health`
 - Health (alias kompatibilitas probe): `GET /health`
 

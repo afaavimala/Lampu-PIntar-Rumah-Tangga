@@ -136,11 +136,12 @@ async function main() {
   }
 
   const server = serve({
+    hostname: config.host,
     port: config.port,
     fetch: (request) => app.fetch(request, bindings),
   })
 
-  console.log(`[server] Running on http://127.0.0.1:${config.port}`)
+  console.log(`[server] Running on http://${config.host}:${config.port}`)
   if (config.serveDashboard) {
     console.log(`[server] Serving frontend from ${config.frontendDistDir}`)
   }

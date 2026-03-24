@@ -19,17 +19,23 @@ export function createApp() {
   app.use('*', requestIdMiddleware)
   app.use('/api/*', cors({
     origin: (origin, c) => {
-      const configuredOrigins = (c.env.CORS_ORIGINS ?? '')
+      const configuredOrigins: string[] = (c.env.CORS_ORIGINS ?? '')
         .split(',')
         .map((item: string) => item.trim())
         .filter(Boolean)
+      const allowAnyOrigin = configuredOrigins.includes('*')
+      const configuredAllowedOrigins = configuredOrigins.filter((item) => item !== '*')
       const allowedOrigins =
-        configuredOrigins.length > 0
-          ? configuredOrigins
+        configuredAllowedOrigins.length > 0
+          ? configuredAllowedOrigins
           : ['http://127.0.0.1:5173', 'http://localhost:5173']
 
       if (!origin) {
-        return allowedOrigins[0] ?? 'http://127.0.0.1:5173'
+        return ''
+      }
+
+      if (allowAnyOrigin) {
+        return origin
       }
 
       return allowedOrigins.includes(origin) ? origin : ''

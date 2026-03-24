@@ -3,6 +3,7 @@ import type { EnvBindings } from '../types/app'
 import type { MariaDbRuntimeConfig } from './mariadb-d1'
 
 export type ServerRuntimeConfig = {
+  host: string
   port: number
   schedulerEnabled: boolean
   schedulerIntervalMs: number
@@ -44,6 +45,7 @@ function readBoolean(env: NodeJS.ProcessEnv, key: string, fallback: boolean) {
 }
 
 export function loadServerRuntimeConfig(env: NodeJS.ProcessEnv): ServerRuntimeConfig {
+  const host = env.HOST?.trim() || '0.0.0.0'
   const port = readNumber(env, 'PORT', 8787)
   const schedulerEnabled = readBoolean(env, 'SCHEDULER_ENABLED', true)
   const schedulerIntervalMs = readNumber(env, 'SCHEDULER_INTERVAL_MS', 60_000)
@@ -83,6 +85,7 @@ export function loadServerRuntimeConfig(env: NodeJS.ProcessEnv): ServerRuntimeCo
   }
 
   return {
+    host,
     port,
     schedulerEnabled,
     schedulerIntervalMs,

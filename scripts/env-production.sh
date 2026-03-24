@@ -18,6 +18,7 @@ copy_if_missing "$ROOT_DIR/dashboard/.env.production.example" "$FRONTEND_ENV_FIL
 copy_if_missing "$ROOT_DIR/backend/.worker.production.env.example" "$WORKER_PROD_ENV_FILE" "env-production"
 
 apply_env_mappings "env-production" "$BACKEND_ENV_FILE" \
+  "HOST:BACKEND_HOST" \
   "PORT:BACKEND_PORT" \
   "SERVE_DASHBOARD:BACKEND_SERVE_DASHBOARD" \
   "FRONTEND_DIST_DIR:BACKEND_FRONTEND_DIST_DIR" \
