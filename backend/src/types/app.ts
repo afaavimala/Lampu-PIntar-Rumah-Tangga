@@ -85,6 +85,7 @@ export type CommandAction = 'ON' | 'OFF'
 export type DeviceRecord = {
   id: number
   device_id: string
+  mqtt_device_id: string
   name: string
   location: string | null
   command_channel: string

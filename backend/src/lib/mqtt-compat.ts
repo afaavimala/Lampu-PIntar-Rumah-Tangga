@@ -18,12 +18,14 @@ export type CommandPublishTarget = {
 }
 
 export type NormalizedSwitchPower = 'ON' | 'OFF'
+export type TasmotaPowerStateMap = Record<string, NormalizedSwitchPower>
 
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
 const TASMOTA_COMMAND_CHANNEL_PATTERN = /^POWER(?:[1-9]\d?)?$/i
+const TASMOTA_ENTITY_ID_SEPARATOR = '__'
 
 function normalizeTasmotaCommandChannelValue(value: unknown) {
   if (typeof value !== 'string') {
@@ -93,26 +95,8 @@ export function normalizeTasmotaSwitchValue(value: unknown): NormalizedSwitchPow
   return null
 }
 
-export function extractTasmotaPowerFromObject(payload: Record<string, unknown>) {
-  const directPower = normalizeTasmotaSwitchValue(payload.POWER)
-  if (directPower) {
-    return directPower
-  }
-
-  for (const [key, value] of Object.entries(payload)) {
-    if (/^POWER\d+$/i.test(key)) {
-      const normalized = normalizeTasmotaSwitchValue(value)
-      if (normalized) {
-        return normalized
-      }
-    }
-  }
-
-  return null
-}
-
-export function extractTasmotaCommandChannelsFromObject(payload: Record<string, unknown>) {
-  const channels: string[] = []
+export function extractTasmotaPowerStatesFromObject(payload: Record<string, unknown>): TasmotaPowerStateMap {
+  const powerStates: TasmotaPowerStateMap = {}
 
   for (const [key, value] of Object.entries(payload)) {
     const normalizedKey = key.trim().toUpperCase()
@@ -124,7 +108,7 @@ export function extractTasmotaCommandChannelsFromObject(payload: Record<string, 
     if (normalizedChannel === 'POWER') {
       const normalizedSwitch = normalizeTasmotaSwitchValue(value)
       if (normalizedSwitch) {
-        channels.push('POWER')
+        powerStates.POWER = normalizedSwitch
         continue
       }
 
@@ -132,10 +116,10 @@ export function extractTasmotaCommandChannelsFromObject(payload: Record<string, 
         const compact = value.trim()
         if (/^[01]+$/.test(compact)) {
           if (compact.length <= 1) {
-            channels.push('POWER')
+            powerStates.POWER = compact === '1' ? 'ON' : 'OFF'
           } else {
-            for (let index = 1; index <= compact.length; index += 1) {
-              channels.push(`POWER${index}`)
+            for (let index = 0; index < compact.length; index += 1) {
+              powerStates[`POWER${index + 1}`] = compact[index] === '1' ? 'ON' : 'OFF'
             }
           }
         }
@@ -143,12 +127,31 @@ export function extractTasmotaCommandChannelsFromObject(payload: Record<string, 
       continue
     }
 
-    if (normalizeTasmotaSwitchValue(value)) {
-      channels.push(normalizedChannel)
+    const normalizedSwitch = normalizeTasmotaSwitchValue(value)
+    if (normalizedSwitch) {
+      powerStates[normalizedChannel] = normalizedSwitch
     }
   }
 
-  return sortTasmotaCommandChannels(channels)
+  return Object.fromEntries(
+    sortTasmotaCommandChannels(Object.keys(powerStates)).map((channel) => [channel, powerStates[channel]]),
+  )
+}
+
+export function extractTasmotaPowerFromObject(payload: Record<string, unknown>) {
+  const powerStates = extractTasmotaPowerStatesFromObject(payload)
+  const channels = sortTasmotaCommandChannels(Object.keys(powerStates))
+  for (const channel of channels) {
+    const power = powerStates[channel]
+    if (power) {
+      return power
+    }
+  }
+  return null
+}
+
+export function extractTasmotaCommandChannelsFromObject(payload: Record<string, unknown>) {
+  return sortTasmotaCommandChannels(Object.keys(extractTasmotaPowerStatesFromObject(payload)))
 }
 
 export function pickSuggestedTasmotaCommandChannel(channels: string[]) {
@@ -163,6 +166,20 @@ export function pickSuggestedTasmotaCommandChannel(channels: string[]) {
   }
 
   return 'POWER'
+}
+
+export function buildTasmotaEntityDeviceId(mqttDeviceId: string, commandChannel?: string) {
+  const normalizedMqttDeviceId = mqttDeviceId.trim()
+  if (!normalizedMqttDeviceId) {
+    return ''
+  }
+
+  const normalizedChannel = normalizeTasmotaCommandChannel(commandChannel)
+  if (normalizedChannel === 'POWER') {
+    return normalizedMqttDeviceId
+  }
+
+  return `${normalizedMqttDeviceId}${TASMOTA_ENTITY_ID_SEPARATOR}${normalizedChannel}`
 }
 
 export function parseTasmotaPowerPayload(payload: string): NormalizedSwitchPower | null {
@@ -189,6 +206,7 @@ function parseTasmotaJsonStatus(topic: string, payload: string, source: string):
     return null
   }
 
+  const powerStates = extractTasmotaPowerStatesFromObject(parsed)
   const power = extractTasmotaPowerFromObject(parsed)
   if (!power) {
     return null
@@ -204,6 +222,7 @@ function parseTasmotaJsonStatus(topic: string, payload: string, source: string):
     deviceId,
     payload: {
       power,
+      powerStates,
       source,
       raw: parsed,
     },
@@ -255,8 +274,8 @@ export function buildCommandPublishTargets(input: {
 }
 
 export function getRealtimeSubscribeTopics() {
-  const tasmotaPowerTopics = Array.from({ length: 8 }, (_, index) => {
-    const suffix = index === 0 ? 'POWER' : `POWER${index + 1}`
+  const tasmotaPowerTopics = Array.from({ length: 9 }, (_, index) => {
+    const suffix = index === 0 ? 'POWER' : `POWER${index}`
     return [`stat/+/${suffix}`, `+/stat/${suffix}`]
   }).flat()
 
@@ -272,15 +291,19 @@ export function getRealtimeSubscribeTopics() {
 }
 
 export function getTasmotaDiscoverySubscribeTopics() {
+  const tasmotaPowerTopics = Array.from({ length: 9 }, (_, index) => {
+    const suffix = index === 0 ? 'POWER' : `POWER${index}`
+    return [`stat/+/${suffix}`, `+/stat/${suffix}`]
+  }).flat()
+
   return uniqueValues([
+    ...tasmotaPowerTopics,
     'tele/+/LWT',
     '+/tele/LWT',
     'tele/+/STATE',
     '+/tele/STATE',
     'stat/+/RESULT',
     '+/stat/RESULT',
-    'stat/+/POWER',
-    '+/stat/POWER',
     'stat/+/STATUS',
     '+/stat/STATUS',
     'stat/+/STATUS11',
@@ -304,6 +327,25 @@ export function parseRealtimeMqttMessage(topic: string, payload: string): Parsed
       return null
     }
 
+    let parsedPayload: Record<string, unknown> | null = null
+    try {
+      parsedPayload = JSON.parse(payload) as Record<string, unknown>
+    } catch {
+      parsedPayload = null
+    }
+
+    const powerStates =
+      parsedPayload && Object.keys(parsedPayload).length > 0
+        ? extractTasmotaPowerStatesFromObject(parsedPayload)
+        : (() => {
+            const normalizedPower = parseTasmotaPowerPayload(payload)
+            const normalizedChannel = normalizeTasmotaCommandChannel(parts[2])
+            if (!normalizedPower) {
+              return {}
+            }
+            return { [normalizedChannel]: normalizedPower }
+          })()
+
     const power = parseTasmotaPowerPayload(payload) ?? payload.trim().toUpperCase()
     if (!power) {
       return null
@@ -314,6 +356,7 @@ export function parseRealtimeMqttMessage(topic: string, payload: string): Parsed
       deviceId,
       payload: {
         power,
+        powerStates,
         source: 'tasmota_stat_power',
       },
     }

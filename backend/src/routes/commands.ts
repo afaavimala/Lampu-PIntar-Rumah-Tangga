@@ -71,7 +71,7 @@ async function resolveCommandContext(c: Context<AppEnv>, input: {
   }
 
   const envelope = createCommandEnvelope({
-    deviceId: input.deviceId,
+    deviceId: device.mqtt_device_id,
     action: input.action as CommandAction,
     requestId: input.requestId,
     commandChannel: device.command_channel,
@@ -123,7 +123,11 @@ commandRoutes.post('/execute', requireAuth(['command']), async (c) => {
     result: 'PUBLISHED',
   })
 
-  const payload = buildSuccessEnvelope(c, context.envelope)
+  const responsePayload = {
+    ...context.envelope,
+    deviceId: context.device.device_id,
+  }
+  const payload = buildSuccessEnvelope(c, responsePayload)
   await persistIdempotentResponse(c, idempotency, 200, payload)
-  return ok(c, context.envelope)
+  return ok(c, responsePayload)
 })

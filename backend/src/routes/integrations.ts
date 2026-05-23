@@ -7,7 +7,7 @@ import { beginIdempotentRequest, persistIdempotentResponse } from '../lib/idempo
 import { buildSuccessEnvelope, fail, ok } from '../lib/response'
 import { ensureDeviceCommandChannelCompatibility, listDevicesByPrincipal, resolveDeviceAccess } from '../lib/db'
 import { getBestStatusForDevice } from '../lib/status'
-import { normalizeTasmotaCommandChannel } from '../lib/mqtt-compat'
+import { buildTasmotaEntityDeviceId, normalizeTasmotaCommandChannel } from '../lib/mqtt-compat'
 import { readTasmotaDiscoveryOverWs } from '../lib/mqtt-ws'
 
 export const integrationRoutes = new Hono<AppEnv>()
@@ -67,6 +67,13 @@ const createDeviceSchema = z.object({
     .min(3)
     .max(64)
     .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+  mqttDeviceId: z
+    .string()
+    .trim()
+    .min(3)
+    .max(64)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/)
+    .optional(),
   name: z.string().trim().min(1).max(120),
   location: z.string().trim().max(120).optional(),
   commandChannel: z.string().trim().max(16).optional(),
@@ -96,6 +103,14 @@ function normalizeLocation(value: string | null | undefined, currentValue: strin
 
   const normalized = value.trim()
   return normalized ? normalized : null
+}
+
+function deriveSuggestedEntityName(baseName: string, commandChannel: string, totalChannels: number) {
+  if (commandChannel === 'POWER' && totalChannels <= 1) {
+    return baseName
+  }
+
+  return `${baseName} ${commandChannel}`.trim()
 }
 
 integrationRoutes.get('/integrations/capabilities', requireAuth(['read']), async (c) => {
@@ -156,28 +171,33 @@ integrationRoutes.get('/devices/discovery', requireAuth(['read']), async (c) => 
   const ownedDeviceIds = new Set(ownedDevices.map((device) => device.device_id.toLowerCase()))
   const registeredDeviceIds = new Set(activelyClaimedDevices.results.map((row) => row.device_id.toLowerCase()))
 
-  const devices = discovered.map((item) => {
-    const key = item.deviceId.toLowerCase()
-    const alreadyLinked = ownedDeviceIds.has(key)
-    const alreadyRegistered = registeredDeviceIds.has(key)
-    const suggestedName = item.friendlyName?.trim() || deriveSuggestedDeviceName(item.deviceId)
+  const devices = discovered.flatMap((item) => {
     const availableCommandChannels =
       item.commandChannels.length > 0 ? item.commandChannels : [item.suggestedCommandChannel || 'POWER']
-    const suggestedCommandChannel = item.suggestedCommandChannel || availableCommandChannels[0] || 'POWER'
+    const baseName = item.friendlyName?.trim() || deriveSuggestedDeviceName(item.deviceId)
 
-    return {
-      deviceId: item.deviceId,
-      online: item.online,
-      power: item.power,
-      availableCommandChannels,
-      suggestedCommandChannel,
-      tasmotaTopic: item.tasmotaTopic,
-      sources: item.sources,
-      lastSeenAt: new Date(item.lastSeenAt).toISOString(),
-      suggestedName,
-      alreadyLinked,
-      alreadyRegistered,
-    }
+    return availableCommandChannels.map((commandChannel) => {
+      const publicDeviceId = buildTasmotaEntityDeviceId(item.deviceId, commandChannel)
+      const key = publicDeviceId.toLowerCase()
+      const alreadyLinked = ownedDeviceIds.has(key)
+      const alreadyRegistered = registeredDeviceIds.has(key)
+
+      return {
+        deviceId: publicDeviceId,
+        mqttDeviceId: item.deviceId,
+        commandChannel,
+        online: item.online,
+        power: item.powerStates[commandChannel] ?? item.power,
+        availableCommandChannels,
+        suggestedCommandChannel: commandChannel,
+        tasmotaTopic: item.tasmotaTopic,
+        sources: item.sources,
+        lastSeenAt: new Date(item.lastSeenAt).toISOString(),
+        suggestedName: deriveSuggestedEntityName(baseName, commandChannel, availableCommandChannels.length),
+        alreadyLinked,
+        alreadyRegistered,
+      }
+    })
   })
 
   return ok(c, {
@@ -211,6 +231,10 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
 
   await ensureDeviceCommandChannelCompatibility(c.env.DB)
 
+  const commandChannel = normalizeTasmotaCommandChannel(parsed.data.commandChannel)
+  const mqttDeviceId = parsed.data.mqttDeviceId?.trim() || parsed.data.deviceId.trim()
+  const publicDeviceId = buildTasmotaEntityDeviceId(mqttDeviceId, commandChannel)
+
   const existingDevice = await c.env.DB
     .prepare(
       `SELECT id
@@ -218,12 +242,11 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
        WHERE device_id = ?
        LIMIT 1`,
     )
-    .bind(parsed.data.deviceId)
+    .bind(publicDeviceId)
     .first<{ id: number }>()
 
   const nowIso = new Date().toISOString()
   const normalizedLocation = normalizeLocation(parsed.data.location)
-  const commandChannel = normalizeTasmotaCommandChannel(parsed.data.commandChannel)
   const legacySecretPlaceholder = 'unused-tasmota'
 
   if (existingDevice) {
@@ -239,10 +262,10 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
     await c.env.DB
       .prepare(
         `UPDATE devices
-         SET name = ?, location = ?, command_channel = ?
+         SET device_id = ?, mqtt_device_id = ?, name = ?, location = ?, command_channel = ?
          WHERE id = ?`,
       )
-      .bind(parsed.data.name, normalizedLocation, commandChannel, existingDevice.id)
+      .bind(publicDeviceId, mqttDeviceId, parsed.data.name, normalizedLocation, commandChannel, existingDevice.id)
       .run()
 
     await c.env.DB
@@ -254,7 +277,7 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
       .run()
 
     const payload = buildSuccessEnvelope(c, {
-      id: parsed.data.deviceId,
+      id: publicDeviceId,
       name: parsed.data.name,
       location: normalizedLocation,
       commandChannel,
@@ -265,11 +288,12 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
 
   const createdDevice = await c.env.DB
     .prepare(
-      `INSERT INTO devices (device_id, name, location, command_channel, hmac_secret, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO devices (device_id, mqtt_device_id, name, location, command_channel, hmac_secret, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
-      parsed.data.deviceId,
+      publicDeviceId,
+      mqttDeviceId,
       parsed.data.name,
       normalizedLocation,
       commandChannel,
@@ -288,7 +312,7 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
     .run()
 
   const payload = buildSuccessEnvelope(c, {
-    id: parsed.data.deviceId,
+    id: publicDeviceId,
     name: parsed.data.name,
     location: normalizedLocation,
     commandChannel,
@@ -382,18 +406,36 @@ integrationRoutes.patch('/devices/:deviceId', requireUserAuth(), async (c) => {
     parsed.data.commandChannel === undefined
       ? device.command_channel
       : normalizeTasmotaCommandChannel(parsed.data.commandChannel)
+  const nextPublicDeviceId = buildTasmotaEntityDeviceId(device.mqtt_device_id, nextCommandChannel)
+
+  if (nextPublicDeviceId !== device.device_id) {
+    const conflictingDevice = await c.env.DB
+      .prepare(
+        `SELECT id
+         FROM devices
+         WHERE device_id = ?
+           AND id <> ?
+         LIMIT 1`,
+      )
+      .bind(nextPublicDeviceId, device.id)
+      .first<{ id: number }>()
+
+    if (conflictingDevice) {
+      return fail(c, 'VALIDATION_ERROR', 'Device ID already exists', 409)
+    }
+  }
 
   await c.env.DB
     .prepare(
       `UPDATE devices
-       SET name = ?, location = ?, command_channel = ?
+       SET device_id = ?, name = ?, location = ?, command_channel = ?
        WHERE id = ?`,
     )
-    .bind(nextName, nextLocation, nextCommandChannel, device.id)
+    .bind(nextPublicDeviceId, nextName, nextLocation, nextCommandChannel, device.id)
     .run()
 
   const payload = buildSuccessEnvelope(c, {
-    id: device.device_id,
+    id: nextPublicDeviceId,
     name: nextName,
     location: nextLocation,
     commandChannel: nextCommandChannel,

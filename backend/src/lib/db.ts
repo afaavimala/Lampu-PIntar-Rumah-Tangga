@@ -30,13 +30,25 @@ export async function ensureDeviceCommandChannelCompatibility(db: D1Database) {
 
   const compatibilityTask = (async () => {
     const dialect = (db as { dialect?: string }).dialect
-    const addColumnSql =
+    const addCommandChannelColumnSql =
       dialect === 'mariadb'
         ? `ALTER TABLE devices ADD COLUMN command_channel VARCHAR(32) NOT NULL DEFAULT 'POWER'`
         : `ALTER TABLE devices ADD COLUMN command_channel TEXT NOT NULL DEFAULT 'POWER'`
+    const addMqttDeviceIdColumnSql =
+      dialect === 'mariadb'
+        ? `ALTER TABLE devices ADD COLUMN mqtt_device_id VARCHAR(64) NOT NULL DEFAULT ''`
+        : `ALTER TABLE devices ADD COLUMN mqtt_device_id TEXT NOT NULL DEFAULT ''`
 
     try {
-      await db.prepare(addColumnSql).run()
+      await db.prepare(addCommandChannelColumnSql).run()
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        throw error
+      }
+    }
+
+    try {
+      await db.prepare(addMqttDeviceIdColumnSql).run()
     } catch (error) {
       if (!isDuplicateColumnError(error)) {
         throw error
@@ -46,8 +58,10 @@ export async function ensureDeviceCommandChannelCompatibility(db: D1Database) {
     await db
       .prepare(
         `UPDATE devices
-         SET command_channel = 'POWER'
-         WHERE command_channel IS NULL OR TRIM(command_channel) = ''`,
+         SET command_channel = COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER'),
+             mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)
+         WHERE command_channel IS NULL OR TRIM(command_channel) = ''
+            OR mqtt_device_id IS NULL OR TRIM(mqtt_device_id) = ''`,
       )
       .run()
   })().catch((error) => {
@@ -188,7 +202,9 @@ export async function listDevicesByPrincipal(db: D1Database, principal: Principa
   if (principal.kind === 'user') {
     const result = await db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location,
+        `SELECT d.id, d.device_id,
+                COALESCE(NULLIF(TRIM(d.mqtt_device_id), ''), d.device_id) AS mqtt_device_id,
+                d.name, d.location,
                 COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
@@ -202,7 +218,9 @@ export async function listDevicesByPrincipal(db: D1Database, principal: Principa
 
   const result = await db
     .prepare(
-      `SELECT id, device_id, name, location,
+      `SELECT id, device_id,
+              COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id) AS mqtt_device_id,
+              name, location,
               COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
        FROM devices
        ORDER BY id ASC`,
@@ -221,7 +239,9 @@ export async function getDeviceByDeviceIdForPrincipal(
   if (principal.kind === 'user') {
     return db
       .prepare(
-        `SELECT d.id, d.device_id, d.name, d.location,
+        `SELECT d.id, d.device_id,
+                COALESCE(NULLIF(TRIM(d.mqtt_device_id), ''), d.device_id) AS mqtt_device_id,
+                d.name, d.location,
                 COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel
          FROM devices d
          INNER JOIN user_devices ud ON ud.device_id = d.id
@@ -234,7 +254,9 @@ export async function getDeviceByDeviceIdForPrincipal(
 
   return db
     .prepare(
-      `SELECT id, device_id, name, location,
+      `SELECT id, device_id,
+              COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id) AS mqtt_device_id,
+              name, location,
               COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
        FROM devices
        WHERE device_id = ?
@@ -249,7 +271,9 @@ export async function getDeviceByDeviceId(db: D1Database, deviceId: string) {
 
   return db
     .prepare(
-      `SELECT id, device_id, name, location,
+      `SELECT id, device_id,
+              COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id) AS mqtt_device_id,
+              name, location,
               COALESCE(NULLIF(TRIM(command_channel), ''), 'POWER') AS command_channel
        FROM devices
        WHERE device_id = ?

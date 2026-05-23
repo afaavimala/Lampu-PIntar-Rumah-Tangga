@@ -9,6 +9,48 @@ import { readLwtSnapshotOverWs } from '../lib/mqtt-ws'
 
 export const realtimeRoutes = new Hono<AppEnv>()
 
+function normalizeRealtimePower(value: unknown) {
+  return value === 'ON' || value === 'OFF' ? value : 'UNKNOWN'
+}
+
+function toRecord(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function buildEntityStatusPayload(payload: Record<string, unknown>, commandChannel: string) {
+  const powerStates = toRecord(payload.powerStates)
+  const directChannelPower = normalizeRealtimePower(powerStates?.[commandChannel])
+  const fallbackPower = normalizeRealtimePower(payload.power)
+  const power =
+    directChannelPower !== 'UNKNOWN'
+      ? directChannelPower
+      : !powerStates || commandChannel === 'POWER'
+        ? fallbackPower
+        : 'UNKNOWN'
+
+  return {
+    ...payload,
+    power,
+    commandChannel,
+  }
+}
+
+function shouldEmitEntityStatus(payload: Record<string, unknown>, commandChannel: string) {
+  const powerStates = toRecord(payload.powerStates)
+  if (!powerStates) {
+    return normalizeRealtimePower(payload.power) !== 'UNKNOWN'
+  }
+
+  if (normalizeRealtimePower(powerStates[commandChannel]) !== 'UNKNOWN') {
+    return true
+  }
+
+  return commandChannel === 'POWER' && normalizeRealtimePower(payload.power) !== 'UNKNOWN'
+}
+
 realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
   const principal = c.get('principal')
   if (!principal) {
@@ -17,7 +59,17 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
 
   const proxy = getRealtimeMqttProxy()
   const devices = await listDevicesByPrincipal(c.env.DB, principal)
-  const deviceIds = devices.map((device) => device.device_id)
+  const mqttDeviceIds = Array.from(new Set(devices.map((device) => device.mqtt_device_id)))
+  const devicesByMqttDeviceId = new Map<string, typeof devices>()
+  for (const device of devices) {
+    const key = device.mqtt_device_id.toLowerCase()
+    const existing = devicesByMqttDeviceId.get(key)
+    if (existing) {
+      existing.push(device)
+      continue
+    }
+    devicesByMqttDeviceId.set(key, [device])
+  }
   const initialStatuses = await listBestStatus(c.env.DB, principal)
 
   const encoder = new TextEncoder()
@@ -111,13 +163,25 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
 
       let unsubscribe = () => {}
 
-      unsubscribe = streamProxy.subscribe(deviceIds, (event) => {
-        if (event.type === 'status') {
-          emitStatus(event.deviceId, event.payload, event.ts)
+      unsubscribe = streamProxy.subscribe(mqttDeviceIds, (event) => {
+        const relatedDevices = devicesByMqttDeviceId.get(event.deviceId.toLowerCase()) ?? []
+        if (relatedDevices.length === 0) {
           return
         }
 
-        emitLwt(event.deviceId, event.payload, event.ts)
+        if (event.type === 'status') {
+          for (const device of relatedDevices) {
+            if (!shouldEmitEntityStatus(event.payload, device.command_channel)) {
+              continue
+            }
+            emitStatus(device.device_id, buildEntityStatusPayload(event.payload, device.command_channel), event.ts)
+          }
+          return
+        }
+
+        for (const device of relatedDevices) {
+          emitLwt(device.device_id, event.payload, event.ts)
+        }
       })
 
       void (async () => {
@@ -127,11 +191,14 @@ realtimeRoutes.get('/stream', requireAuth(['read']), async (c) => {
             username: c.env.MQTT_USERNAME,
             password: c.env.MQTT_PASSWORD,
             clientIdPrefix: c.env.MQTT_CLIENT_ID_PREFIX,
-            deviceIds,
+            deviceIds: mqttDeviceIds,
           })
 
           for (const [deviceId, payload] of Object.entries(lwtSnapshot)) {
-            emitLwt(deviceId, payload, Date.now())
+            const relatedDevices = devicesByMqttDeviceId.get(deviceId.toLowerCase()) ?? []
+            for (const device of relatedDevices) {
+              emitLwt(device.device_id, payload, Date.now())
+            }
           }
         } catch {
           // ignore mqtt snapshot error for stream stability

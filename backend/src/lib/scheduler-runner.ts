@@ -9,6 +9,7 @@ type DueScheduleRow = {
   user_id: number
   device_internal_id: number
   device_id: string
+  mqtt_device_id: string
   command_channel: string
   action: 'ON' | 'OFF'
   cron_expr: string
@@ -83,6 +84,7 @@ export async function runDueSchedules(env: EnvBindings) {
               ds.user_id,
               ds.device_id AS device_internal_id,
               d.device_id,
+              COALESCE(NULLIF(TRIM(d.mqtt_device_id), ''), d.device_id) AS mqtt_device_id,
               COALESCE(NULLIF(TRIM(d.command_channel), ''), 'POWER') AS command_channel,
               ds.action,
               ds.cron_expr,
@@ -157,7 +159,7 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
   const requestId = `sch-${row.schedule_id}-${plannedAt}`
   try {
     const envelope = createCommandEnvelope({
-      deviceId: row.device_id,
+      deviceId: row.mqtt_device_id,
       action: row.action,
       requestId,
       commandChannel: row.command_channel,

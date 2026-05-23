@@ -59,6 +59,10 @@ fi
 
 if is_truthy "$DRY_RUN"; then
   DEPLOY_ARGS+=(--dry-run)
+  if is_truthy "$SYNC_SECRETS"; then
+    SYNC_SECRETS=false
+    echo "[deploy-worker] Dry run mode: skipping worker secret sync."
+  fi
   echo "[deploy-worker] Dry run mode enabled."
 fi
 
@@ -67,6 +71,12 @@ if [[ -n "$API_BASE_URL" ]]; then
 else
   echo "[deploy-worker] Building dashboard with same-origin API base (empty VITE_API_BASE_URL)"
 fi
+
+echo "[deploy-worker] Backend typecheck..."
+(
+  cd "$ROOT_DIR/backend"
+  npm run typecheck
+)
 
 (
   cd "$ROOT_DIR/dashboard"

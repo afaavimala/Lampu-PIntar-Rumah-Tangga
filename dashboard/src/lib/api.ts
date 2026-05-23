@@ -111,6 +111,7 @@ export function bootstrap() {
 
 export function createDevice(input: {
   deviceId: string
+  mqttDeviceId?: string
   name: string
   location?: string
   commandChannel?: string
@@ -123,6 +124,7 @@ export function createDevice(input: {
       headers: jsonHeaders(input.idempotencyKey),
       body: JSON.stringify({
         deviceId: input.deviceId,
+        mqttDeviceId: input.mqttDeviceId,
         name: input.name,
         location: input.location,
         commandChannel: input.commandChannel,

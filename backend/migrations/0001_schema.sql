@@ -123,6 +123,11 @@ ALTER TABLE device_schedules ADD COLUMN window_start_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN window_end_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN enforce_every_minute INTEGER;
 ALTER TABLE devices ADD COLUMN command_channel TEXT NOT NULL DEFAULT 'POWER';
+ALTER TABLE devices ADD COLUMN mqtt_device_id TEXT NOT NULL DEFAULT '';
+
+UPDATE devices
+SET mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)
+WHERE mqtt_device_id IS NULL OR TRIM(mqtt_device_id) = '';
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits (reset_at);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active ON auth_sessions (user_id, revoked_at, expires_at);
@@ -142,8 +147,9 @@ VALUES (
   datetime('now')
 );
 
-INSERT OR IGNORE INTO devices (device_id, name, location, command_channel, hmac_secret, created_at)
+INSERT OR IGNORE INTO devices (device_id, mqtt_device_id, name, location, command_channel, hmac_secret, created_at)
 VALUES (
+  'lampu-ruang-tamu',
   'lampu-ruang-tamu',
   'Lampu Ruang Tamu',
   'Ruang Tamu',

@@ -1,6 +1,7 @@
 import {
   buildLwtSnapshotSubscribeTopics,
   extractTasmotaCommandChannelsFromObject,
+  extractTasmotaPowerStatesFromObject,
   extractTasmotaPowerFromObject,
   extractLwtDeviceIdFromTopic,
   extractTasmotaDeviceIdFromTopic,
@@ -9,6 +10,7 @@ import {
   parseTasmotaPowerPayload,
   sortTasmotaCommandChannels,
   type NormalizedSwitchPower,
+  type TasmotaPowerStateMap,
 } from './mqtt-compat'
 
 const CONNECT_PACKET_TYPE = 0x10
@@ -514,6 +516,7 @@ export type TasmotaDiscoveredDevice = {
   deviceId: string
   online: boolean | null
   power: NormalizedSwitchPower | 'UNKNOWN'
+  powerStates: TasmotaPowerStateMap
   commandChannels: string[]
   suggestedCommandChannel: string
   friendlyName: string | null
@@ -613,6 +616,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
       deviceId: deviceId.trim(),
       online: null,
       power: 'UNKNOWN',
+      powerStates: {},
       commandChannels: [],
       suggestedCommandChannel: 'POWER',
       friendlyName: null,
@@ -688,6 +692,28 @@ export async function readTasmotaDiscoveryOverWs(input: {
     candidate.suggestedCommandChannel = pickSuggestedTasmotaCommandChannel(candidate.commandChannels)
   }
 
+  function mergeCandidatePowerStates(candidate: TasmotaDiscoveredDevice, powerStates: TasmotaPowerStateMap) {
+    const channels = Object.keys(powerStates)
+    if (channels.length === 0) {
+      return
+    }
+
+    candidate.powerStates = {
+      ...candidate.powerStates,
+      ...powerStates,
+    }
+    mergeCandidateChannels(candidate, channels)
+
+    const nextPower =
+      candidate.powerStates[candidate.suggestedCommandChannel] ??
+      candidate.powerStates.POWER ??
+      candidate.powerStates[sortTasmotaCommandChannels(Object.keys(candidate.powerStates))[0] ?? '']
+
+    if (nextPower) {
+      candidate.power = nextPower
+    }
+  }
+
   function applyPowerPayload(
     candidate: TasmotaDiscoveredDevice,
     suffix: string,
@@ -699,9 +725,28 @@ export async function readTasmotaDiscoveryOverWs(input: {
       mergeCandidateChannels(candidate, [channelFromTopic])
     }
 
-    const power = parsedRecord ? extractTasmotaPowerFromObject(parsedRecord) : parseTasmotaPowerPayload(payload)
-    if (power) {
-      candidate.power = power
+    const powerStates = parsedRecord
+      ? extractTasmotaPowerStatesFromObject(parsedRecord)
+      : (() => {
+          const power = parseTasmotaPowerPayload(payload)
+          if (!power || !channelFromTopic) {
+            return {}
+          }
+          return { [channelFromTopic]: power }
+        })()
+
+    mergeCandidatePowerStates(candidate, powerStates)
+
+    if (parsedRecord) {
+      const power = extractTasmotaPowerFromObject(parsedRecord)
+      if (power) {
+        candidate.power = power
+      }
+    } else {
+      const power = parseTasmotaPowerPayload(payload)
+      if (power) {
+        candidate.power = power
+      }
     }
 
     if (parsedRecord) {
@@ -723,6 +768,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
     const statusSts = asRecord(parsedRecord.StatusSTS)
 
     if (status) {
+      mergeCandidatePowerStates(candidate, extractTasmotaPowerStatesFromObject(status))
       mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(status))
 
       const topic = typeof status.Topic === 'string' ? status.Topic.trim() : ''
@@ -742,6 +788,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
     }
 
     if (statusSts) {
+      mergeCandidatePowerStates(candidate, extractTasmotaPowerStatesFromObject(statusSts))
       mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(statusSts))
       const statusStsPower = extractTasmotaPowerFromObject(statusSts)
       if (statusStsPower) {
@@ -750,6 +797,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
     }
 
     if (suffix === 'status11') {
+      mergeCandidatePowerStates(candidate, extractTasmotaPowerStatesFromObject(parsedRecord))
       mergeCandidateChannels(candidate, extractTasmotaCommandChannelsFromObject(parsedRecord))
       const status11Power = extractTasmotaPowerFromObject(parsedRecord)
       if (status11Power) {
@@ -921,6 +969,7 @@ export async function readTasmotaDiscoveryOverWs(input: {
       .slice(0, maxDevices)
       .map((item) => ({
         ...item,
+        powerStates: { ...item.powerStates },
         commandChannels: sortTasmotaCommandChannels(item.commandChannels),
         suggestedCommandChannel: pickSuggestedTasmotaCommandChannel(item.commandChannels),
         sources: item.sources.slice().sort((a, b) => a.localeCompare(b)),

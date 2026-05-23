@@ -22,6 +22,7 @@ type DueScheduleRow = {
   user_id: number
   device_internal_id: number
   device_id: string
+  mqtt_device_id: string
   command_channel: string
   action: 'ON' | 'OFF'
   cron_expr: string
@@ -61,6 +62,9 @@ class SchedulerDbMock implements AppDatabase {
         if (query.startsWith('ALTER TABLE devices ADD COLUMN command_channel')) {
           return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
         }
+        if (query.startsWith('ALTER TABLE devices ADD COLUMN mqtt_device_id')) {
+          return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
+        }
 
         if (query.startsWith('UPDATE devices')) {
           return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
@@ -98,6 +102,7 @@ describe('scheduler runner dedup', () => {
         user_id: 1,
         device_internal_id: 11,
         device_id: 'lampu-uji-dedup',
+        mqtt_device_id: 'lampu-uji-dedup',
         command_channel: 'POWER',
         action: 'ON',
         cron_expr: '* * * * *',

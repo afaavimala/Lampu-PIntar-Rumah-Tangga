@@ -106,6 +106,7 @@ describe('auth and access verification', () => {
           return {
             id: 99,
             device_id: 'device-user-b',
+            mqtt_device_id: 'device-user-b',
             name: 'Device User B',
             location: 'B',
             command_channel: 'POWER',
@@ -119,6 +120,9 @@ describe('auth and access verification', () => {
 
       if (mode === 'run') {
         if (sql.startsWith('ALTER TABLE devices ADD COLUMN command_channel')) {
+          return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
+        }
+        if (sql.startsWith('ALTER TABLE devices ADD COLUMN mqtt_device_id')) {
           return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
         }
         if (sql.startsWith('UPDATE devices')) {

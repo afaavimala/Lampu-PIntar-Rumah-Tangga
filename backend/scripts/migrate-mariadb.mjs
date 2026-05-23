@@ -23,6 +23,19 @@ function readNumber(name, fallback) {
   return parsed
 }
 
+function readBoolean(name, fallback) {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const normalized = raw.trim().toLowerCase()
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+    return true
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+    return false
+  }
+  return fallback
+}
+
 function quoteIdentifier(value) {
   return `\`${value.replaceAll('`', '``')}\``
 }
@@ -152,17 +165,24 @@ async function ensureIndex(conn, tableName, indexName, indexExpressionSql) {
 
 async function ensureSchemaCompatibility(conn) {
   await ensureColumn(conn, 'devices', 'command_channel', "VARCHAR(32) NOT NULL DEFAULT 'POWER'")
+  await ensureColumn(conn, 'devices', 'mqtt_device_id', "VARCHAR(191) NOT NULL DEFAULT ''")
   await ensureColumn(conn, 'device_schedules', 'window_group_id', 'VARCHAR(191) NULL')
   await ensureColumn(conn, 'device_schedules', 'window_start_minute', 'INT NULL')
   await ensureColumn(conn, 'device_schedules', 'window_end_minute', 'INT NULL')
   await ensureColumn(conn, 'device_schedules', 'enforce_every_minute', 'INT NULL')
   await ensureIndex(conn, 'device_schedules', 'idx_device_schedules_window_group', '(window_group_id)')
+  await conn.query(
+    `UPDATE devices
+        SET mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)
+      WHERE mqtt_device_id IS NULL OR TRIM(mqtt_device_id) = ''`,
+  )
 }
 
 async function seedDefaults(conn) {
   const nowIso = new Date().toISOString()
   const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim() || 'admin@example.com'
   const adminPassword = process.env.SEED_ADMIN_PASSWORD?.trim() || 'admin12345'
+  const seedSampleDeviceEnabled = readBoolean('SEED_SAMPLE_DEVICE_ENABLED', true)
   const sampleDeviceId = process.env.SEED_SAMPLE_DEVICE_ID?.trim() || 'lampu-ruang-tamu'
   const sampleDeviceName = process.env.SEED_SAMPLE_DEVICE_NAME?.trim() || 'Lampu Ruang Tamu'
   const sampleDeviceLocation = process.env.SEED_SAMPLE_DEVICE_LOCATION?.trim() || 'Ruang Tamu'
@@ -179,38 +199,45 @@ async function seedDefaults(conn) {
     [adminEmail, passwordHash, nowIso],
   )
 
-  await conn.query(
-    `INSERT INTO devices (device_id, name, location, command_channel, hmac_secret, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       name = VALUES(name),
-       location = VALUES(location),
-       command_channel = VALUES(command_channel),
-       hmac_secret = VALUES(hmac_secret)`,
-    [
-      sampleDeviceId,
-      sampleDeviceName,
-      sampleDeviceLocation,
-      sampleDeviceCommandChannel,
-      legacySecretPlaceholder,
-      nowIso,
-    ],
-  )
-
   const userRow = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [adminEmail])
-  const deviceRow = await conn.query('SELECT id FROM devices WHERE device_id = ? LIMIT 1', [sampleDeviceId])
   const userId = Number(userRow[0]?.id ?? 0)
-  const deviceId = Number(deviceRow[0]?.id ?? 0)
-
-  if (!userId || !deviceId) {
-    throw new Error('Failed to resolve seeded user/device IDs')
+  if (!userId) {
+    throw new Error('Failed to resolve seeded user ID')
   }
 
-  await conn.query(
-    `INSERT IGNORE INTO user_devices (user_id, device_id, role, created_at)
-     VALUES (?, ?, 'owner', ?)`,
-    [userId, deviceId, nowIso],
-  )
+  if (seedSampleDeviceEnabled) {
+    await conn.query(
+      `INSERT INTO devices (device_id, mqtt_device_id, name, location, command_channel, hmac_secret, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         mqtt_device_id = VALUES(mqtt_device_id),
+         name = VALUES(name),
+         location = VALUES(location),
+         command_channel = VALUES(command_channel),
+         hmac_secret = VALUES(hmac_secret)`,
+      [
+        sampleDeviceId,
+        sampleDeviceId,
+        sampleDeviceName,
+        sampleDeviceLocation,
+        sampleDeviceCommandChannel,
+        legacySecretPlaceholder,
+        nowIso,
+      ],
+    )
+
+    const deviceRow = await conn.query('SELECT id FROM devices WHERE device_id = ? LIMIT 1', [sampleDeviceId])
+    const deviceId = Number(deviceRow[0]?.id ?? 0)
+    if (!deviceId) {
+      throw new Error('Failed to resolve seeded device ID')
+    }
+
+    await conn.query(
+      `INSERT IGNORE INTO user_devices (user_id, device_id, role, created_at)
+       VALUES (?, ?, 'owner', ?)`,
+      [userId, deviceId, nowIso],
+    )
+  }
 
   await conn.query(
     `INSERT INTO integration_clients (name, api_key_hash, scopes, is_active, created_at)
@@ -223,7 +250,11 @@ async function seedDefaults(conn) {
 
   console.log('[migrate] Seed ensured')
   console.log(`[migrate] Seed admin email: ${adminEmail}`)
-  console.log(`[migrate] Seed sample device: ${sampleDeviceId}`)
+  if (seedSampleDeviceEnabled) {
+    console.log(`[migrate] Seed sample device: ${sampleDeviceId}`)
+  } else {
+    console.log('[migrate] Seed sample device: skipped (SEED_SAMPLE_DEVICE_ENABLED=false)')
+  }
 }
 
 async function main() {

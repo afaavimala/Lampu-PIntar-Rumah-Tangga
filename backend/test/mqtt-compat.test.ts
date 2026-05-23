@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCommandPublishTargets,
+  buildTasmotaEntityDeviceId,
   buildLwtSnapshotSubscribeTopics,
   extractTasmotaCommandChannelsFromObject,
   extractTasmotaDeviceIdFromTopic,
+  extractTasmotaPowerStatesFromObject,
   extractLwtDeviceIdFromTopic,
   getTasmotaDiscoverySubscribeTopics,
   getRealtimeSubscribeTopics,
@@ -49,6 +51,7 @@ describe('mqtt compatibility helpers', () => {
       deviceId: 'tasmota_123',
       payload: {
         power: 'ON',
+        powerStates: { POWER: 'ON' },
         source: 'tasmota_stat_power',
       },
     })
@@ -57,6 +60,7 @@ describe('mqtt compatibility helpers', () => {
       deviceId: 'tasmota_123',
       payload: {
         power: 'OFF',
+        powerStates: { POWER: 'OFF' },
         source: 'tasmota_stat_result',
         raw: { POWER: 'OFF' },
       },
@@ -66,6 +70,7 @@ describe('mqtt compatibility helpers', () => {
       deviceId: 'tasmota_123',
       payload: {
         power: 'ON',
+        powerStates: { POWER1: 'ON' },
         source: 'tasmota_tele_state',
         raw: { POWER1: 'ON' },
       },
@@ -120,6 +125,8 @@ describe('mqtt compatibility helpers', () => {
     expect(topics).toContain('+/stat/STATUS')
     expect(topics).toContain('stat/+/STATUS11')
     expect(topics).toContain('+/stat/STATUS11')
+    expect(topics).toContain('stat/+/POWER1')
+    expect(topics).toContain('+/stat/POWER1')
   })
 
   it('normalizes and parses tasmota power payload variants', () => {
@@ -156,9 +163,27 @@ describe('mqtt compatibility helpers', () => {
     ])
   })
 
+  it('extracts per-channel power states from status payloads', () => {
+    expect(extractTasmotaPowerStatesFromObject({ POWER: 'ON' })).toEqual({ POWER: 'ON' })
+    expect(extractTasmotaPowerStatesFromObject({ POWER: '010' })).toEqual({
+      POWER1: 'OFF',
+      POWER2: 'ON',
+      POWER3: 'OFF',
+    })
+    expect(extractTasmotaPowerStatesFromObject({ POWER2: 'ON', POWER4: 'OFF' })).toEqual({
+      POWER2: 'ON',
+      POWER4: 'OFF',
+    })
+  })
+
   it('suggests first indexed channel for multi-channel tasmota devices', () => {
     expect(pickSuggestedTasmotaCommandChannel(['POWER'])).toBe('POWER')
     expect(pickSuggestedTasmotaCommandChannel(['POWER3', 'POWER1', 'POWER2'])).toBe('POWER1')
     expect(pickSuggestedTasmotaCommandChannel([])).toBe('POWER')
+  })
+
+  it('builds stable public ids for tasmota entities', () => {
+    expect(buildTasmotaEntityDeviceId('lampu-dapur', 'POWER')).toBe('lampu-dapur')
+    expect(buildTasmotaEntityDeviceId('lampu-dapur', 'POWER2')).toBe('lampu-dapur__POWER2')
   })
 })

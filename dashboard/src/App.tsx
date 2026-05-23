@@ -567,9 +567,10 @@ export default function App() {
     setClaimingDeviceId(device.deviceId)
     try {
       await createDevice({
-        deviceId: device.deviceId,
+        deviceId: device.mqttDeviceId,
         name: device.suggestedName,
-        commandChannel: device.suggestedCommandChannel,
+        mqttDeviceId: device.mqttDeviceId,
+        commandChannel: device.commandChannel,
         idempotencyKey: crypto.randomUUID(),
       })
       await hydrateDashboard()

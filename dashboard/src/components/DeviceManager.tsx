@@ -246,13 +246,17 @@ export function DeviceManager({
               return (
                 <li key={device.deviceId}>
                   <div className="device-discovery-meta">
-                    <strong>{device.deviceId}</strong>
+                    <strong>{device.suggestedName}</strong>
                     <p>
-                      Nama: {device.suggestedName} • Power: {device.power} •{' '}
+                      Entity ID: {device.deviceId} • MQTT ID: {device.mqttDeviceId}
+                    </p>
+                    <p>
+                      Channel: {device.commandChannel} • Power: {device.power} •{' '}
                       {device.online == null ? 'ONLINE ?' : device.online ? 'ONLINE' : 'OFFLINE'}
                     </p>
                     <p>
-                      Channels: {device.availableCommandChannels.length ? device.availableCommandChannels.join(', ') : 'POWER'} •
+                      Semua channel:{' '}
+                      {device.availableCommandChannels.length ? device.availableCommandChannels.join(', ') : 'POWER'} •
                       {' '}Auto cmd: {device.suggestedCommandChannel}
                     </p>
                     <p>

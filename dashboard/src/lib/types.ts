@@ -24,6 +24,8 @@ export type Device = {
 
 export type DiscoveredDevice = {
   deviceId: string
+  mqttDeviceId: string
+  commandChannel: string
   online: boolean | null
   power: 'ON' | 'OFF' | 'UNKNOWN'
   availableCommandChannels: string[]
