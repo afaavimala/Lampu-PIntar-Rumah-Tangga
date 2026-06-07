@@ -58,4 +58,5 @@ Deploy default saat ini adalah single Worker (API + dashboard assets pada 1 URL)
 npm run deploy:worker
 ```
 
+Target default: `https://lampupintar.afaavimala.workers.dev`.
 Flow ini otomatis build dashboard sebelum upload Worker.

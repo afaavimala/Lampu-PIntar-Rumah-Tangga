@@ -1,7 +1,8 @@
-name = "smartlamp-backend"
+name = "lampupintar"
 main = "src/index.ts"
-compatibility_date = "2026-02-16"
+compatibility_date = "2026-06-07"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
 [assets]
 directory = "../dashboard/dist"
@@ -9,9 +10,10 @@ binding = "ASSETS"
 
 # Aman dicommit: hanya non-secret defaults.
 # Jangan taruh credential/token/password di file ini.
-# Secret harus diset via `wrangler secret put` (dibantu script deploy-worker.sh).
+# Secret harus diset via deploy script (`wrangler deploy --secrets-file`).
 # Default vars di sini diselaraskan dengan root `.env.example`.
-# Untuk domain production cloud, override via root `.env` + `npm run deploy:worker`.
+# Target production cloud default: lampupintar.afaavimala.workers.dev.
+# Override via root `.env` + `npm run deploy:worker` jika perlu.
 [vars]
 COOKIE_SECURE = "false"
 COOKIE_SAME_SITE = "Strict"
@@ -30,7 +32,7 @@ SEED_SAMPLE_DEVICE_ID = "lampu-ruang-tamu"
 [[d1_databases]]
 binding = "DB"
 database_name = "smartlamp_db"
-database_id = "33b4c993-4ebf-471e-aa4d-ca7fb9507ea8"
+database_id = "71be5235-fd72-4fb3-a646-b6a07e92b1d5"
 
 [durable_objects]
 bindings = [

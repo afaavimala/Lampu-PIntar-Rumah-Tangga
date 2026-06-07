@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS devices (
   name TEXT NOT NULL,
   location TEXT,
   hmac_secret TEXT NOT NULL,
+  command_channel TEXT NOT NULL DEFAULT 'POWER',
+  mqtt_device_id TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
 
@@ -122,8 +124,6 @@ ALTER TABLE device_schedules ADD COLUMN window_group_id TEXT;
 ALTER TABLE device_schedules ADD COLUMN window_start_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN window_end_minute INTEGER;
 ALTER TABLE device_schedules ADD COLUMN enforce_every_minute INTEGER;
-ALTER TABLE devices ADD COLUMN command_channel TEXT NOT NULL DEFAULT 'POWER';
-ALTER TABLE devices ADD COLUMN mqtt_device_id TEXT NOT NULL DEFAULT '';
 
 UPDATE devices
 SET mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)

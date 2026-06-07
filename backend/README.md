@@ -49,7 +49,8 @@ npm run deploy:worker
 
 Catatan:
 - `deploy:worker` akan build dashboard terlebih dulu, lalu deploy API + static assets ke Worker yang sama.
-- URL Worker menjadi satu endpoint untuk UI (`/`) dan API (`/api/*`).
+- Target default Worker adalah `lampupintar`.
+- URL Worker menjadi satu endpoint untuk UI (`/`) dan API (`/api/*`): `https://lampupintar.afaavimala.workers.dev`.
 
 Migrasi D1 remote dari root:
 
@@ -60,6 +61,7 @@ npm run migrate:remote
 Konfigurasi cloud:
 - `.env` (shared: `BACKEND_*`, `FRONTEND_*`, plus opsi deploy `CF_*`)
 - `backend/wrangler.toml`
+- D1 existing: `smartlamp_db` (`71be5235-fd72-4fb3-a646-b6a07e92b1d5`)
 - `backend/.dev.vars.local.example`
 - `backend/.worker.production.env.example`
 

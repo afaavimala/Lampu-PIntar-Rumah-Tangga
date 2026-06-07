@@ -38,6 +38,59 @@ upsert_env_line() {
   mv "$tmp_file" "$file"
 }
 
+validate_root_env_file() {
+  local tag="${1:-env}"
+  local line
+  local key
+  local line_no=0
+  local failed=false
+  declare -A seen_lines=()
+
+  if [[ ! -f "$ROOT_OVERRIDE_FILE" ]]; then
+    return 1
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no + 1))
+    line="${line%$'\r'}"
+
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+      continue
+    fi
+
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+
+    if [[ "$line" != *"="* ]]; then
+      echo "[$tag] Invalid env line at $ROOT_OVERRIDE_FILE:$line_no (missing '=')" >&2
+      failed=true
+      continue
+    fi
+
+    key="${line%%=*}"
+    key="$(printf '%s' "$key" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+    if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "[$tag] Invalid env key at $ROOT_OVERRIDE_FILE:$line_no: $key" >&2
+      failed=true
+      continue
+    fi
+
+    if [[ -n "${seen_lines[$key]:-}" ]]; then
+      echo "[$tag] Duplicate env key $key at $ROOT_OVERRIDE_FILE:${seen_lines[$key]} and $line_no" >&2
+      failed=true
+      continue
+    fi
+
+    seen_lines[$key]="$line_no"
+  done <"$ROOT_OVERRIDE_FILE"
+
+  if [[ "$failed" == "true" ]]; then
+    return 1
+  fi
+}
+
 load_root_env() {
   local tag="${1:-env}"
   local line
@@ -47,6 +100,10 @@ load_root_env() {
 
   if [[ ! -f "$ROOT_OVERRIDE_FILE" ]]; then
     echo "[$tag] Root override file not found: $ROOT_OVERRIDE_FILE"
+    return 1
+  fi
+
+  if ! validate_root_env_file "$tag"; then
     return 1
   fi
 
@@ -64,8 +121,7 @@ load_root_env() {
     fi
 
     if [[ "$line" != *"="* ]]; then
-      echo "[$tag] Skip invalid line in $ROOT_OVERRIDE_FILE: $line"
-      continue
+      return 1
     fi
 
     key="${line%%=*}"
@@ -75,8 +131,7 @@ load_root_env() {
     value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]+//')"
 
     if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      echo "[$tag] Skip invalid key in $ROOT_OVERRIDE_FILE: $key"
-      continue
+      return 1
     fi
 
     if [[ "${!key+x}" == "x" ]] && ! is_truthy "$overwrite_existing"; then

@@ -14,7 +14,7 @@ resolve_optional_env_value() {
   printf ''
 }
 
-load_root_env "migrate-remote" || true
+load_root_env "migrate-remote"
 
 D1_DATABASE_NAME="$(resolve_optional_env_value "CF_D1_DATABASE_NAME")"
 if [[ -z "$D1_DATABASE_NAME" ]]; then

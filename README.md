@@ -213,7 +213,8 @@ Catatan:
 ```bash
 cp backend/wrangler.toml.example backend/wrangler.toml
 ```
-- Pastikan binding D1/Assets/Cron valid.
+- Target default: Worker `lampupintar` di `https://lampupintar.afaavimala.workers.dev`.
+- Pastikan binding D1/Assets/Cron valid. D1 production saat ini: `smartlamp_db` (`71be5235-fd72-4fb3-a646-b6a07e92b1d5`).
 2. Siapkan root env.
 ```bash
 cp .env.example .env
@@ -221,6 +222,7 @@ cp .env.example .env
 ```
 3. Pastikan nilai cloud penting:
 - `CF_D1_DATABASE_NAME` (dan `CF_WORKER_ENV` jika pakai environment wrangler)
+- `CF_D1_DATABASE_ID=71be5235-fd72-4fb3-a646-b6a07e92b1d5` untuk D1 existing `smartlamp_db`
 - `CF_WORKER_SYNC_SECRETS=true` jika ingin sinkron secret otomatis
 - `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin
 - Opsional override parameter struktur `backend/wrangler.toml` dari root `.env`:
@@ -234,16 +236,18 @@ npm run env:production
 ```
 5. Jalankan migrasi D1 remote.
 ```bash
+npx wrangler d1 migrations list smartlamp_db --remote -c backend/wrangler.toml
 npm run migrate:remote
 ```
 6. Deploy Worker.
 ```bash
+CF_WORKER_DRY_RUN=true npm run deploy:worker
 npm run deploy:worker
 ```
 
 Catatan deploy cloud:
 - Script deploy otomatis build frontend (`dashboard/dist`) lalu upload assets + API ke Worker yang sama.
-- Script deploy otomatis sync vars/secrets dari root `.env` saat `CF_WORKER_SYNC_SECRETS=true`.
+- Script deploy otomatis sync vars/secrets dari root `.env` saat `CF_WORKER_SYNC_SECRETS=true` memakai `wrangler deploy --secrets-file`, sehingga code + secret masuk dalam satu deployment.
 - Override sekali jalan jika perlu:
 ```bash
 FRONTEND_VITE_API_BASE_URL= npm run deploy:worker
