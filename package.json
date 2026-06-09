@@ -21,6 +21,7 @@
     "deploy:local": "bash ./scripts/deploy-local.sh"
   },
   "devDependencies": {
+    "playwright": "^1.40.0",
     "wrangler": "^4.98.0"
   }
 }

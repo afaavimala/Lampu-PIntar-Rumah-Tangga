@@ -230,7 +230,11 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
   }
 
   const payload = buildSuccessEnvelope(c, toScheduleDto(schedule))
-  await persistIdempotentResponse(c, idempotency, 201, payload)
+  try {
+    await persistIdempotentResponse(c, idempotency, 201, payload)
+  } catch (err) {
+    console.error('Failed to persist idempotent response (non-fatal):', err)
+  }
   return c.json(payload, 201)
 })
 
@@ -354,7 +358,11 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
   }
 
   const payload = buildSuccessEnvelope(c, toScheduleDto(updated))
-  await persistIdempotentResponse(c, idempotency, 200, payload)
+  try {
+    await persistIdempotentResponse(c, idempotency, 200, payload)
+  } catch (err) {
+    console.error('Failed to persist idempotent response (non-fatal):', err)
+  }
   return c.json(payload, 200)
 })
 
@@ -379,6 +387,14 @@ scheduleRoutes.delete('/:scheduleId', requireUserAuth(), async (c) => {
     return c.json(idempotency.payload, idempotency.statusCode as any)
   }
 
+  // Remove dependent schedule_runs first to avoid foreign-key constraint failures
+  try {
+    await c.env.DB.prepare('DELETE FROM schedule_runs WHERE schedule_id = ?').bind(scheduleId).run()
+  } catch (err) {
+    // log and continue; if this fails, the subsequent delete may still fail
+    console.error('Failed to delete schedule_runs for scheduleId', scheduleId, err)
+  }
+
   const deletion = await c.env.DB
     .prepare('DELETE FROM device_schedules WHERE id = ? AND user_id = ?')
     .bind(scheduleId, principal.userId)
@@ -389,7 +405,11 @@ scheduleRoutes.delete('/:scheduleId', requireUserAuth(), async (c) => {
   }
 
   const payload = buildSuccessEnvelope(c, { deleted: true, scheduleId })
-  await persistIdempotentResponse(c, idempotency, 200, payload)
+  try {
+    await persistIdempotentResponse(c, idempotency, 200, payload)
+  } catch (err) {
+    console.error('Failed to persist idempotent response (non-fatal):', err)
+  }
   return c.json(payload, 200)
 })
 

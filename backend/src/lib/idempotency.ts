@@ -44,7 +44,10 @@ export async function beginIdempotentRequest(
       'SELECT idempotency_key, route, request_hash, response_body, status_code FROM idempotency_records WHERE idempotency_key = ? LIMIT 1',
     )
     .bind(key)
-    .first<ExistingRecord>()
+    .first<ExistingRecord>().catch((err: any) => {
+      console.error('Idempotency lookup failed, continuing without idempotency:', err)
+      return null
+    })
 
   if (!existing) {
     return {
