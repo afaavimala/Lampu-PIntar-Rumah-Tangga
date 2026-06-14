@@ -4,7 +4,10 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  role TEXT NOT NULL DEFAULT 'member',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS devices (
@@ -22,10 +25,15 @@ CREATE TABLE IF NOT EXISTS user_devices (
   user_id INTEGER NOT NULL,
   device_id INTEGER NOT NULL,
   role TEXT NOT NULL DEFAULT 'owner',
+  device_permission TEXT NOT NULL DEFAULT 'monitoring',
+  schedule_permission TEXT NOT NULL DEFAULT 'none',
+  assigned_by_user_id INTEGER,
   created_at TEXT NOT NULL,
+  updated_at TEXT,
   PRIMARY KEY (user_id, device_id),
   FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
+  FOREIGN KEY (device_id) REFERENCES devices(id),
+  FOREIGN KEY (assigned_by_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS command_logs (
@@ -90,6 +98,7 @@ CREATE TABLE IF NOT EXISTS device_schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
   device_id INTEGER NOT NULL,
+  created_by_user_id INTEGER,
   action TEXT NOT NULL,
   cron_expr TEXT NOT NULL,
   timezone TEXT NOT NULL,
@@ -101,7 +110,8 @@ CREATE TABLE IF NOT EXISTS device_schedules (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (device_id) REFERENCES devices(id)
+  FOREIGN KEY (device_id) REFERENCES devices(id),
+  FOREIGN KEY (created_by_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS schedule_runs (
@@ -140,12 +150,19 @@ CREATE INDEX IF NOT EXISTS idx_command_logs_device ON command_logs (device_id, i
 -- Default admin credentials for local MVP:
 -- email: admin@example.com
 -- password: admin12345
-INSERT OR IGNORE INTO users (email, password_hash, created_at)
+INSERT OR IGNORE INTO users (email, password_hash, role, is_active, created_at, updated_at)
 VALUES (
   'admin@example.com',
   '$2b$12$pE5REBOZ19Ad.9CSB13J1O/n7nID3CKOq5dWd.XLOVlAHFLHEKTX.',
+  'admin',
+  1,
+  datetime('now'),
   datetime('now')
 );
+
+UPDATE users
+SET role = 'admin', is_active = 1, updated_at = datetime('now')
+WHERE email = 'admin@example.com';
 
 INSERT OR IGNORE INTO devices (device_id, mqtt_device_id, name, location, command_channel, hmac_secret, created_at)
 VALUES (
@@ -158,8 +175,9 @@ VALUES (
   datetime('now')
 );
 
-INSERT OR IGNORE INTO user_devices (user_id, device_id, role, created_at)
-SELECT u.id, d.id, 'owner', datetime('now')
+INSERT OR IGNORE INTO user_devices
+  (user_id, device_id, role, device_permission, schedule_permission, assigned_by_user_id, created_at, updated_at)
+SELECT u.id, d.id, 'owner', 'manage', 'manage', u.id, datetime('now'), datetime('now')
 FROM users u
 JOIN devices d ON d.device_id = 'lampu-ruang-tamu'
 WHERE u.email = 'admin@example.com';

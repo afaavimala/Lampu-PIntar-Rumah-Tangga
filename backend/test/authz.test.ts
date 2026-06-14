@@ -93,8 +93,16 @@ describe('auth and access verification', () => {
 
     const db = createDbMock((sql, _params, mode) => {
       if (mode === 'first') {
-        if (sql === 'SELECT id, email FROM users WHERE id = ? LIMIT 1') {
-          return { id: 1, email: 'user-a@example.com' }
+        if (sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
+          return {
+            id: 1,
+            email: 'user-a@example.com',
+            password_hash: 'unused',
+            role: 'member',
+            is_active: 1,
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: null,
+          }
         }
         if (sql.includes('FROM idempotency_records')) {
           return null
@@ -119,6 +127,16 @@ describe('auth and access verification', () => {
       }
 
       if (mode === 'run') {
+        if (
+          sql.startsWith('ALTER TABLE users') ||
+          sql.startsWith('ALTER TABLE user_devices') ||
+          sql.startsWith('ALTER TABLE device_schedules') ||
+          sql.startsWith('UPDATE users') ||
+          sql.startsWith('UPDATE user_devices') ||
+          sql.startsWith('UPDATE device_schedules')
+        ) {
+          return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
+        }
         if (sql.startsWith('ALTER TABLE devices ADD COLUMN command_channel')) {
           return { meta: { changes: 0, last_row_id: 0 } } satisfies DbRunResult
         }

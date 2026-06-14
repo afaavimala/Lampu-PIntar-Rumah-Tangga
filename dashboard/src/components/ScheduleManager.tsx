@@ -35,6 +35,7 @@ type ScheduleManagerProps = {
   onToggleEnabled: (schedule: ScheduleRule) => Promise<void>
   onDelete: (scheduleId: number) => Promise<void>
   onUpdate: (scheduleId: number, patch: SchedulePatchInput) => Promise<void>
+  canManageSchedule?: (deviceId: string) => boolean
   busy?: boolean
 }
 
@@ -340,6 +341,7 @@ export function ScheduleManager({
   onToggleEnabled,
   onDelete,
   onUpdate,
+  canManageSchedule = () => true,
   busy = false,
 }: ScheduleManagerProps) {
   const [deviceIdInput, setDeviceIdInput] = useState('')
@@ -359,18 +361,23 @@ export function ScheduleManager({
   const [editEnforceEveryMinute, setEditEnforceEveryMinute] = useState(10)
   const [editingLegacy, setEditingLegacy] = useState(false)
 
+  const manageableDevices = useMemo(
+    () => devices.filter((device) => canManageSchedule(device.id)),
+    [devices, canManageSchedule],
+  )
   const hasDevices = devices.length > 0
+  const hasManageableDevices = manageableDevices.length > 0
   const deviceNameById = useMemo(() => new Map(devices.map((item) => [item.id, item.name])), [devices])
 
   const selectedDeviceId = useMemo(() => {
-    if (devices.length === 0) {
+    if (manageableDevices.length === 0) {
       return ''
     }
-    if (deviceIdInput && devices.some((item) => item.id === deviceIdInput)) {
+    if (deviceIdInput && manageableDevices.some((item) => item.id === deviceIdInput)) {
       return deviceIdInput
     }
-    return devices[0].id
-  }, [devices, deviceIdInput])
+    return manageableDevices[0].id
+  }, [manageableDevices, deviceIdInput])
 
   const windows = useMemo<ScheduleWindow[]>(() => {
     const grouped = new Map<string, ScheduleWindow>()
@@ -503,9 +510,9 @@ export function ScheduleManager({
               value={selectedDeviceId}
               onChange={(event) => setDeviceIdInput(event.target.value)}
               required
-              disabled={busy}
+              disabled={busy || !hasManageableDevices}
             >
-              {devices.map((device) => (
+              {manageableDevices.map((device) => (
                 <option key={device.id} value={device.id}>
                   {device.name}
                 </option>
@@ -513,35 +520,58 @@ export function ScheduleManager({
             </select>
           </label>
 
-          <fieldset className="weekday-picker" disabled={busy}>
+          <fieldset className="weekday-picker" disabled={busy || !hasManageableDevices}>
             <legend>Hari Aktif</legend>
             <WeekdayToggleGroup
               value={activeDays}
-              disabled={busy}
+              disabled={busy || !hasManageableDevices}
               onToggle={(day) => setActiveDays((prev) => toggleDay(prev, day))}
             />
           </fieldset>
 
-          <Time24Input label="Waktu Dari (24 jam)" value={timeFrom} onChange={setTimeFrom} disabled={busy} />
-          <Time24Input label="Waktu Sampai (24 jam)" value={timeUntil} onChange={setTimeUntil} disabled={busy} />
-          <ActionInput label="Kondisi Saat Rentang Aktif" value={activeAction} onChange={setActiveAction} disabled={busy} />
+          <Time24Input
+            label="Waktu Dari (24 jam)"
+            value={timeFrom}
+            onChange={setTimeFrom}
+            disabled={busy || !hasManageableDevices}
+          />
+          <Time24Input
+            label="Waktu Sampai (24 jam)"
+            value={timeUntil}
+            onChange={setTimeUntil}
+            disabled={busy || !hasManageableDevices}
+          />
+          <ActionInput
+            label="Kondisi Saat Rentang Aktif"
+            value={activeAction}
+            onChange={setActiveAction}
+            disabled={busy || !hasManageableDevices}
+          />
           <IntervalInput
             label="Interval Eksekusi (menit)"
             value={enforceEveryMinute}
             onChange={setEnforceEveryMinute}
-            disabled={busy}
+            disabled={busy || !hasManageableDevices}
           />
 
           <label>
             Timezone
-            <input value={timezone} onChange={(event) => setTimezone(event.target.value)} required disabled={busy} />
+            <input
+              value={timezone}
+              onChange={(event) => setTimezone(event.target.value)}
+              required
+              disabled={busy || !hasManageableDevices}
+            />
           </label>
 
           {!hasDevices ? <p className="small">Tambahkan device terlebih dahulu sebelum membuat jadwal.</p> : null}
+          {hasDevices && !hasManageableDevices ? (
+            <p className="small">Akses jadwal Anda saat ini read-only atau belum memenuhi permission control.</p>
+          ) : null}
           <button
             type="submit"
             disabled={
-              !hasDevices ||
+              !hasManageableDevices ||
               busy ||
               activeDays.length === 0 ||
               !isValidTime24(timeFrom) ||
@@ -564,6 +594,7 @@ export function ScheduleManager({
             const primaryRuleId = window.rules[0]?.id ?? null
             const isSelected =
               selectedScheduleId != null && window.rules.some((rule) => rule.id === selectedScheduleId)
+            const canMutateWindow = canManageSchedule(window.deviceId)
 
             return (
               <li key={window.key} className={isSelected ? 'selected' : ''}>
@@ -572,6 +603,9 @@ export function ScheduleManager({
                     className="schedule-edit-form"
                     onSubmit={async (event) => {
                       event.preventDefault()
+                      if (!canMutateWindow) {
+                        return
+                      }
                       if (
                         editDays.length === 0 ||
                         !isValidTime24(editTimeFrom) ||
@@ -603,34 +637,51 @@ export function ScheduleManager({
                       setEditingKey(null)
                     }}
                   >
-                    <fieldset className="weekday-picker" disabled={busy}>
+                    <fieldset className="weekday-picker" disabled={busy || !canMutateWindow}>
                       <legend>Hari Aktif</legend>
                       <WeekdayToggleGroup
                         value={editDays}
-                        disabled={busy}
+                        disabled={busy || !canMutateWindow}
                         onToggle={(day) => setEditDays((prev) => toggleDay(prev, day))}
                       />
                     </fieldset>
 
-                    <Time24Input label="Waktu Dari (24 jam)" value={editTimeFrom} onChange={setEditTimeFrom} disabled={busy} />
-                    <Time24Input label="Waktu Sampai (24 jam)" value={editTimeUntil} onChange={setEditTimeUntil} disabled={busy} />
+                    <Time24Input
+                      label="Waktu Dari (24 jam)"
+                      value={editTimeFrom}
+                      onChange={setEditTimeFrom}
+                      disabled={busy || !canMutateWindow}
+                    />
+                    <Time24Input
+                      label="Waktu Sampai (24 jam)"
+                      value={editTimeUntil}
+                      onChange={setEditTimeUntil}
+                      disabled={busy || !canMutateWindow}
+                    />
                     <ActionInput
                       label="Kondisi Saat Rentang Aktif"
                       value={editActiveAction}
                       onChange={setEditActiveAction}
-                      disabled={busy}
+                      disabled={busy || !canMutateWindow}
                     />
                     <IntervalInput
                       label="Interval Eksekusi (menit)"
                       value={editEnforceEveryMinute}
                       onChange={setEditEnforceEveryMinute}
-                      disabled={busy}
+                      disabled={busy || !canMutateWindow}
                     />
 
                     <label>
                       Timezone
-                      <input value={editTimezone} onChange={(event) => setEditTimezone(event.target.value)} required disabled={busy} />
+                      <input
+                        value={editTimezone}
+                        onChange={(event) => setEditTimezone(event.target.value)}
+                        required
+                        disabled={busy || !canMutateWindow}
+                      />
                     </label>
+
+                    {!canMutateWindow ? <p className="small">Jadwal ini read-only untuk permission Anda.</p> : null}
 
                     {editingLegacy ? (
                       <p className="small">
@@ -642,6 +693,7 @@ export function ScheduleManager({
                       <button
                         type="submit"
                         disabled={
+                          !canMutateWindow ||
                           busy ||
                           editDays.length === 0 ||
                           !isValidTime24(editTimeFrom) ||
@@ -692,7 +744,7 @@ export function ScheduleManager({
                   </button>
                   <button
                     type="button"
-                    disabled={busy || window.rules.length === 0}
+                    disabled={busy || !canMutateWindow || window.rules.length === 0}
                     onClick={() => {
                       setEditingKey(window.key)
                       setEditTimezone(window.timezone)
@@ -713,7 +765,7 @@ export function ScheduleManager({
                         await onToggleEnabled(rule)
                       }
                     }}
-                    disabled={busy || window.rules.length === 0}
+                    disabled={busy || !canMutateWindow || window.rules.length === 0}
                   >
                     {allEnabled ? 'Pause' : 'Resume'}
                   </button>
@@ -725,7 +777,7 @@ export function ScheduleManager({
                         await onDelete(rule.id)
                       }
                     }}
-                    disabled={busy || window.rules.length === 0}
+                    disabled={busy || !canMutateWindow || window.rules.length === 0}
                   >
                     Delete
                   </button>

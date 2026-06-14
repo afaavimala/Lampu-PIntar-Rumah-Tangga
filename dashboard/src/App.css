@@ -318,6 +318,53 @@ body::before {
   color: #9adfff;
 }
 
+.view-tabs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.view-tab,
+.logout-button {
+  border: 1px solid rgba(143, 212, 255, 0.42);
+  border-radius: 10px;
+  min-height: 38px;
+  color: #eaf4ff;
+  background: rgba(8, 24, 84, 0.34);
+  font: 700 0.84rem/1 'Manrope', 'Segoe UI', sans-serif;
+  cursor: pointer;
+  padding: 0 0.85rem;
+  white-space: nowrap;
+}
+
+.view-tab.active {
+  border-color: rgba(119, 210, 255, 0.72);
+  background: linear-gradient(95deg, rgba(22, 79, 213, 0.78), rgba(52, 164, 255, 0.78));
+  box-shadow: inset 0 0 0 1px rgba(130, 213, 255, 0.22);
+}
+
+.view-tab:disabled,
+.logout-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.account-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.52rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.account-actions .profile-pill {
+  max-width: min(340px, 100%);
+}
+
 .profile-pill {
   border: 0;
   background: transparent;
@@ -345,6 +392,12 @@ body::before {
   width: clamp(32px, 2.9vw, 46px);
   height: clamp(32px, 2.9vw, 46px);
   color: #a9c6ff;
+}
+
+.logout-button {
+  min-height: 36px;
+  border-color: rgba(255, 174, 174, 0.48);
+  background: rgba(90, 22, 48, 0.34);
 }
 
 .dashboard-content {
@@ -993,6 +1046,234 @@ body::before {
   background: linear-gradient(95deg, rgba(39, 67, 141, 0.82), rgba(97, 121, 187, 0.76));
 }
 
+.panel-shell {
+  border-radius: 18px;
+  border: 1px solid rgba(143, 183, 255, 0.36);
+  background:
+    linear-gradient(166deg, rgba(106, 151, 255, 0.18), rgba(18, 42, 126, 0.6) 54%, rgba(8, 24, 94, 0.76)),
+    rgba(9, 30, 102, 0.66);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 16px 30px rgba(4, 12, 45, 0.35);
+  padding: 1.25rem;
+  min-width: 0;
+}
+
+.panel-head,
+.assignment-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-head h2,
+.panel-form h3,
+.profile-card h3,
+.member-list h3,
+.assignment-panel h3 {
+  margin: 0;
+}
+
+.panel-head h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+}
+
+.role-badge {
+  border: 1px solid rgba(118, 229, 155, 0.45);
+  border-radius: 999px;
+  background: rgba(26, 112, 72, 0.38);
+  color: #bfffd2;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.45rem 0.75rem;
+  text-transform: uppercase;
+}
+
+.success-message {
+  margin: 0 0 0.95rem;
+  color: #aef5c1;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.profile-grid,
+.user-manager-grid,
+.assignment-area {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-grid {
+  grid-template-columns: minmax(260px, 0.9fr) repeat(2, minmax(260px, 1fr));
+  align-items: start;
+}
+
+.user-manager-grid {
+  grid-template-columns: minmax(280px, 0.48fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.assignment-area {
+  margin-top: 1rem;
+  grid-template-columns: minmax(280px, 0.42fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.profile-card,
+.panel-form,
+.member-list,
+.assignment-panel {
+  border-radius: 12px;
+  border: 1px solid rgba(145, 181, 242, 0.34);
+  background: rgba(11, 27, 89, 0.55);
+  padding: 0.95rem;
+  min-width: 0;
+}
+
+.panel-form {
+  display: grid;
+  gap: 0.74rem;
+}
+
+.panel-form label {
+  display: grid;
+  gap: 0.34rem;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
+.panel-form input,
+.assignment-table select,
+.user-table select {
+  border: 1px solid rgba(152, 188, 245, 0.46);
+  border-radius: 10px;
+  background: rgba(7, 24, 83, 0.62);
+  color: var(--text-main);
+  font-size: 0.92rem;
+  padding: 0.6rem 0.7rem;
+  min-width: 0;
+}
+
+.panel-form input:focus,
+.assignment-table select:focus {
+  outline: none;
+  border-color: #8ed1ff;
+  box-shadow: 0 0 0 2px rgba(142, 209, 255, 0.2);
+}
+
+.panel-form button,
+.panel-action,
+.table-button {
+  border: 1px solid rgba(143, 212, 255, 0.55);
+  border-radius: 10px;
+  min-height: 40px;
+  color: #f4f9ff;
+  background: linear-gradient(92deg, #0d48ee, #46bcff 48%, #0d48ee 100%);
+  font: 700 0.9rem/1 'Manrope', 'Segoe UI', sans-serif;
+  cursor: pointer;
+  padding: 0 0.82rem;
+}
+
+.panel-form button:disabled,
+.panel-action:disabled,
+.table-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inline-check {
+  display: inline-flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.5rem !important;
+}
+
+.inline-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.profile-facts {
+  display: grid;
+  gap: 0.72rem;
+  margin: 0.9rem 0 0;
+}
+
+.profile-facts div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.profile-facts dt {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.profile-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.user-table-wrap,
+.assignment-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.72rem;
+}
+
+.user-table,
+.assignment-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+}
+
+.user-table th,
+.user-table td,
+.assignment-table th,
+.assignment-table td {
+  border-bottom: 1px solid rgba(143, 183, 255, 0.22);
+  padding: 0.72rem 0.58rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.user-table th,
+.assignment-table th {
+  color: #d9e8ff;
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.user-table tr.selected td {
+  background: rgba(52, 164, 255, 0.12);
+}
+
+.assignment-table td p {
+  margin: 0.22rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.assignment-table input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
+.assignment-table select {
+  width: min(190px, 100%);
+}
+
+.permission-note {
+  color: #ffd4a6 !important;
+}
+
 @media (min-width: 768px) {
   .schedule-form,
   .schedule-edit-form {
@@ -1205,6 +1486,8 @@ body::before {
   .topbar-inner {
     width: calc(100% - 2rem);
     min-height: 82px;
+    flex-wrap: wrap;
+    padding: 0.65rem 0;
   }
 
   .brand-inline h1 {
@@ -1218,6 +1501,18 @@ body::before {
 
   .profile-pill {
     font-size: clamp(0.98rem, 2.3vw, 1.15rem);
+  }
+
+  .view-tabs {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+  }
+
+  .account-actions {
+    max-width: 58%;
   }
 
   .profile-icon {
@@ -1319,6 +1614,22 @@ body::before {
   .device-create,
   .schedule-shell {
     padding: 0.95rem;
+  }
+
+  .profile-grid,
+  .user-manager-grid,
+  .assignment-area {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-head,
+  .assignment-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .panel-action {
+    width: 100%;
   }
 
   .device-discovery-list li {
@@ -1441,6 +1752,19 @@ body::before {
     max-width: 100%;
   }
 
+  .account-actions {
+    width: 100%;
+    max-width: 100%;
+    justify-content: space-between;
+  }
+
+  .view-tab,
+  .logout-button {
+    min-height: 34px;
+    padding: 0 0.65rem;
+    font-size: 0.78rem;
+  }
+
   .profile-icon {
     width: 24px;
     height: 24px;
@@ -1497,5 +1821,14 @@ body::before {
 
   .weekday-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .panel-shell {
+    padding: 0.9rem;
+  }
+
+  .user-table,
+  .assignment-table {
+    min-width: 560px;
   }
 }

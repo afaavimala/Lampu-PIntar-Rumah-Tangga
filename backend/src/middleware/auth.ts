@@ -55,3 +55,25 @@ export function requireUserAuth(): MiddlewareHandler<AppEnv> {
     await next()
   }
 }
+
+export function requireAdminUser(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const principal = c.get('principal')
+    if (!principal) {
+      const failureReason = c.get('authFailureReason')
+      if (failureReason === 'AUTH_EXPIRED_TOKEN') {
+        return fail(c, 'AUTH_EXPIRED_TOKEN', 'Token expired', 401)
+      }
+      if (failureReason === 'AUTH_INVALID_TOKEN') {
+        return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid token', 401)
+      }
+      return fail(c, 'NOT_AUTHENTICATED', 'Authentication required', 401)
+    }
+
+    if (principal.kind !== 'user' || principal.role !== 'admin') {
+      return fail(c, 'FORBIDDEN_ADMIN_REQUIRED', 'Admin role required', 403)
+    }
+
+    await next()
+  }
+}

@@ -8,6 +8,8 @@ import { statusRoutes } from './routes/status'
 import { integrationRoutes } from './routes/integrations'
 import { openApiRoutes } from './routes/openapi'
 import { realtimeRoutes } from './routes/realtime'
+import { userRoutes } from './routes/users'
+import { profileRoutes } from './routes/profile'
 import { requestIdMiddleware } from './middleware/request-id'
 import { authResolverMiddleware } from './middleware/auth'
 import { fail, ok } from './lib/response'
@@ -42,7 +44,7 @@ export function createApp() {
     },
     credentials: true,
     allowHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id'],
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     exposeHeaders: [
       'X-Request-Id',
       'X-RateLimit-Limit',
@@ -78,6 +80,8 @@ export function createApp() {
   app.route('/api/v1/schedules', scheduleRoutes)
   app.route('/api/v1/status', statusRoutes)
   app.route('/api/v1/realtime', realtimeRoutes)
+  app.route('/api/v1', userRoutes)
+  app.route('/api/v1', profileRoutes)
   app.route('/api/v1', integrationRoutes)
   app.route('/api/v1', openApiRoutes)
 

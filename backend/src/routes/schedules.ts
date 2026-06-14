@@ -1,14 +1,21 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import type { AppEnv, CommandAction } from '../types/app'
+import type { AppEnv, CommandAction, Principal, UserRole } from '../types/app'
 import { parseJsonBody } from '../lib/body'
 import { beginIdempotentRequest, persistIdempotentResponse } from '../lib/idempotency'
 import { fail, buildSuccessEnvelope, ok } from '../lib/response'
 import { requireAuth, requireUserAuth } from '../middleware/auth'
 import { computeNextRunAt } from '../lib/schedules'
-import { resolveDeviceAccess } from '../lib/db'
+import {
+  canManageSchedulesForAssignment,
+  ensureRbacCompatibility,
+  getUserById,
+  getUserDeviceAssignment,
+  resolveDeviceAccess,
+} from '../lib/db'
 
 const createScheduleSchema = z.object({
+  targetUserId: z.number().int().positive().optional(),
   deviceId: z.string().min(1),
   action: z.enum(['ON', 'OFF']),
   cron: z.string().min(1),
@@ -78,40 +85,27 @@ scheduleRoutes.get('/', requireAuth(['read']), async (c) => {
   if (!principal) {
     return fail(c, 'NOT_AUTHENTICATED', 'Authentication required', 401)
   }
+  await ensureRbacCompatibility(c.env.DB, c.env.SEED_ADMIN_EMAIL)
 
   let query
-  if (principal.kind === 'user') {
+  if (principal.kind === 'user' && principal.role !== 'admin') {
     query = await c.env.DB
       .prepare(
-        `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
-                ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
-                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
-                ds.created_at, ds.updated_at, d.device_id
-         FROM device_schedules ds
-         INNER JOIN devices d ON d.id = ds.device_id
+        `${scheduleSelectSql()}
+         INNER JOIN user_devices ud ON ud.device_id = ds.device_id AND ud.user_id = ?
          WHERE ds.user_id = ?
+           AND ud.schedule_permission IN ('monitoring', 'manage')
          ORDER BY ds.id DESC`,
       )
-      .bind(principal.userId)
+      .bind(principal.userId, principal.userId)
       .all<Record<string, unknown>>()
   } else {
     query = await c.env.DB
-      .prepare(
-        `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
-                ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
-                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
-                ds.created_at, ds.updated_at, d.device_id
-         FROM device_schedules ds
-         INNER JOIN devices d ON d.id = ds.device_id
-         ORDER BY ds.id DESC`,
-      )
+      .prepare(`${scheduleSelectSql()} ORDER BY ds.id DESC`)
       .all<Record<string, unknown>>()
   }
 
-  return ok(
-    c,
-    query.results.map((row) => toScheduleDto(row)),
-  )
+  return ok(c, query.results.map((row) => toScheduleDto(row)))
 })
 
 scheduleRoutes.get('/:scheduleId', requireAuth(['read']), async (c) => {
@@ -125,7 +119,7 @@ scheduleRoutes.get('/:scheduleId', requireAuth(['read']), async (c) => {
     return fail(c, 'VALIDATION_ERROR', 'Invalid scheduleId', 400)
   }
 
-  const schedule = await findScheduleById(c.env.DB, principal, scheduleId)
+  const schedule = await findScheduleById(c.env.DB, principal, scheduleId, 'read')
   if (!schedule) {
     return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
   }
@@ -144,6 +138,16 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
     return fail(c, 'VALIDATION_ERROR', parsed.message, 400, { details: parsed.details })
   }
 
+  const requestedTargetUserId = parsed.data.targetUserId ?? principal.userId
+  if (principal.role !== 'admin' && requestedTargetUserId !== principal.userId) {
+    return fail(c, 'FORBIDDEN_ADMIN_REQUIRED', 'Admin role required to assign schedules to other users', 403)
+  }
+
+  const targetUser = await getUserById(c.env.DB, requestedTargetUserId, c.env.SEED_ADMIN_EMAIL)
+  if (!targetUser || targetUser.is_active !== 1) {
+    return fail(c, 'USER_NOT_FOUND', 'Target user not found or inactive', 404)
+  }
+
   const idempotency = await beginIdempotentRequest(c, '/api/v1/schedules:POST', parsed.raw)
   if (idempotency.kind === 'error') {
     return fail(c, 'IDEMPOTENCY_CONFLICT', 'Invalid idempotency request', 409, {
@@ -154,16 +158,30 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
     return c.json(idempotency.payload, idempotency.statusCode as any)
   }
 
-  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, parsed.data.deviceId)
+  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, parsed.data.deviceId, 'control')
   if (deviceAccess.access === 'not_found') {
     return fail(c, 'DEVICE_NOT_FOUND', 'Device not found', 404)
   }
   if (deviceAccess.access === 'forbidden') {
-    return fail(c, 'FORBIDDEN_DEVICE_ACCESS', 'No access to this device', 403)
+    return fail(c, 'FORBIDDEN_DEVICE_ACCESS', 'No control access to this device', 403)
   }
   const device = deviceAccess.device
   if (!device) {
     return fail(c, 'DEVICE_NOT_FOUND', 'Device not found', 404)
+  }
+
+  const targetCanManage = await canUserManageScheduleForDevice(c.env.DB, {
+    userId: requestedTargetUserId,
+    role: targetUser.role,
+    deviceInternalId: device.id,
+  })
+  if (!targetCanManage) {
+    return fail(
+      c,
+      'FORBIDDEN_DEVICE_ACCESS',
+      'Target user needs schedule manage plus device control/manage permission',
+      403,
+    )
   }
 
   let nextRunAt: number
@@ -201,11 +219,12 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
     .prepare(
       `INSERT INTO device_schedules
        (user_id, device_id, action, cron_expr, timezone, enabled, next_run_at, last_run_at, start_at, end_at,
-        window_group_id, window_start_minute, window_end_minute, enforce_every_minute, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        window_group_id, window_start_minute, window_end_minute, enforce_every_minute,
+        created_by_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
-      principal.userId,
+      requestedTargetUserId,
       device.id,
       parsed.data.action,
       parsed.data.cron,
@@ -218,13 +237,14 @@ scheduleRoutes.post('/', requireUserAuth(), async (c) => {
       windowConfig.value.windowStartMinute,
       windowConfig.value.windowEndMinute,
       windowConfig.value.enforceEveryMinute,
+      principal.userId,
       nowIso,
       nowIso,
     )
     .run()
 
   const scheduleId = Number(created.meta.last_row_id)
-  const schedule = await findScheduleById(c.env.DB, principal, scheduleId)
+  const schedule = await findScheduleById(c.env.DB, principal, scheduleId, 'read')
   if (!schedule) {
     return fail(c, 'INTERNAL_ERROR', 'Failed to create schedule', 500)
   }
@@ -264,7 +284,7 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
     return c.json(idempotency.payload, idempotency.statusCode as any)
   }
 
-  const current = await findScheduleById(c.env.DB, principal, scheduleId)
+  const current = await findScheduleById(c.env.DB, principal, scheduleId, 'manage')
   if (!current) {
     return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
   }
@@ -332,7 +352,7 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
        SET action = ?, cron_expr = ?, timezone = ?, enabled = ?, next_run_at = ?,
            start_at = ?, end_at = ?, window_group_id = ?, window_start_minute = ?,
            window_end_minute = ?, enforce_every_minute = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ?`,
     )
     .bind(
       action,
@@ -348,11 +368,10 @@ scheduleRoutes.patch('/:scheduleId', requireUserAuth(), async (c) => {
       windowConfig.value.enforceEveryMinute,
       new Date().toISOString(),
       scheduleId,
-      principal.userId,
     )
     .run()
 
-  const updated = await findScheduleById(c.env.DB, principal, scheduleId)
+  const updated = await findScheduleById(c.env.DB, principal, scheduleId, 'read')
   if (!updated) {
     return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
   }
@@ -387,19 +406,18 @@ scheduleRoutes.delete('/:scheduleId', requireUserAuth(), async (c) => {
     return c.json(idempotency.payload, idempotency.statusCode as any)
   }
 
-  // Remove dependent schedule_runs first to avoid foreign-key constraint failures
+  const current = await findScheduleById(c.env.DB, principal, scheduleId, 'manage')
+  if (!current) {
+    return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
+  }
+
   try {
     await c.env.DB.prepare('DELETE FROM schedule_runs WHERE schedule_id = ?').bind(scheduleId).run()
   } catch (err) {
-    // log and continue; if this fails, the subsequent delete may still fail
     console.error('Failed to delete schedule_runs for scheduleId', scheduleId, err)
   }
 
-  const deletion = await c.env.DB
-    .prepare('DELETE FROM device_schedules WHERE id = ? AND user_id = ?')
-    .bind(scheduleId, principal.userId)
-    .run()
-
+  const deletion = await c.env.DB.prepare('DELETE FROM device_schedules WHERE id = ?').bind(scheduleId).run()
   if ((deletion.meta.changes ?? 0) === 0) {
     return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
   }
@@ -424,7 +442,7 @@ scheduleRoutes.get('/:scheduleId/runs', requireAuth(['read']), async (c) => {
     return fail(c, 'VALIDATION_ERROR', 'Invalid scheduleId', 400)
   }
 
-  const schedule = await findScheduleById(c.env.DB, principal, scheduleId)
+  const schedule = await findScheduleById(c.env.DB, principal, scheduleId, 'read')
   if (!schedule) {
     return fail(c, 'SCHEDULE_NOT_FOUND', 'Schedule not found', 404)
   }
@@ -455,33 +473,68 @@ scheduleRoutes.get('/:scheduleId/runs', requireAuth(['read']), async (c) => {
   )
 })
 
-async function findScheduleById(db: D1Database, principal: AppEnv['Variables']['principal'], scheduleId: number) {
-  if (!principal) return null
+function scheduleSelectSql() {
+  return `SELECT ds.id, ds.user_id, ds.created_by_user_id, ds.device_id AS internal_device_id,
+                 ds.action, ds.cron_expr, ds.timezone, ds.enabled, ds.next_run_at,
+                 ds.last_run_at, ds.start_at, ds.end_at, ds.window_group_id,
+                 ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
+                 ds.created_at, ds.updated_at, d.device_id, u.email AS user_email
+          FROM device_schedules ds
+          INNER JOIN devices d ON d.id = ds.device_id
+          INNER JOIN users u ON u.id = ds.user_id`
+}
 
-  if (principal.kind === 'user') {
+async function canUserManageScheduleForDevice(
+  db: D1Database,
+  input: {
+    userId: number
+    role: UserRole
+    deviceInternalId: number
+  },
+) {
+  if (input.role === 'admin') {
+    return true
+  }
+
+  const assignment = await getUserDeviceAssignment(db, input.userId, input.deviceInternalId)
+  if (!assignment) {
+    return false
+  }
+
+  return canManageSchedulesForAssignment({
+    devicePermission: assignment.devicePermission,
+    schedulePermission: assignment.schedulePermission,
+  })
+}
+
+async function findScheduleById(
+  db: D1Database,
+  principal: Principal,
+  scheduleId: number,
+  mode: 'read' | 'manage',
+) {
+  await ensureRbacCompatibility(db)
+  if (principal.kind === 'user' && principal.role !== 'admin') {
+    const permissionPredicate =
+      mode === 'manage'
+        ? `ud.schedule_permission = 'manage' AND ud.device_permission IN ('control', 'manage')`
+        : `ud.schedule_permission IN ('monitoring', 'manage')`
     return db
       .prepare(
-        `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
-                ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
-                ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
-                ds.created_at, ds.updated_at, d.device_id
-         FROM device_schedules ds
-         INNER JOIN devices d ON d.id = ds.device_id
-         WHERE ds.id = ? AND ds.user_id = ?
+        `${scheduleSelectSql()}
+         INNER JOIN user_devices ud ON ud.device_id = ds.device_id AND ud.user_id = ?
+         WHERE ds.id = ?
+           AND ds.user_id = ?
+           AND ${permissionPredicate}
          LIMIT 1`,
       )
-      .bind(scheduleId, principal.userId)
+      .bind(principal.userId, scheduleId, principal.userId)
       .first<Record<string, unknown>>()
   }
 
   return db
     .prepare(
-      `SELECT ds.id, ds.user_id, ds.device_id AS internal_device_id, ds.action, ds.cron_expr, ds.timezone,
-              ds.enabled, ds.next_run_at, ds.last_run_at, ds.start_at, ds.end_at,
-              ds.window_group_id, ds.window_start_minute, ds.window_end_minute, ds.enforce_every_minute,
-              ds.created_at, ds.updated_at, d.device_id
-       FROM device_schedules ds
-       INNER JOIN devices d ON d.id = ds.device_id
+      `${scheduleSelectSql()}
        WHERE ds.id = ?
        LIMIT 1`,
     )
@@ -493,6 +546,8 @@ function toScheduleDto(row: Record<string, unknown>) {
   return {
     id: Number(row.id),
     userId: Number(row.user_id),
+    userEmail: row.user_email == null ? null : String(row.user_email),
+    createdByUserId: row.created_by_user_id == null ? null : Number(row.created_by_user_id),
     deviceId: String(row.device_id),
     action: String(row.action),
     cron: String(row.cron_expr),

@@ -164,8 +164,16 @@ async function ensureIndex(conn, tableName, indexName, indexExpressionSql) {
 }
 
 async function ensureSchemaCompatibility(conn) {
+  await ensureColumn(conn, 'users', 'role', "VARCHAR(32) NOT NULL DEFAULT 'member'")
+  await ensureColumn(conn, 'users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1')
+  await ensureColumn(conn, 'users', 'updated_at', 'VARCHAR(64) NULL')
   await ensureColumn(conn, 'devices', 'command_channel', "VARCHAR(32) NOT NULL DEFAULT 'POWER'")
   await ensureColumn(conn, 'devices', 'mqtt_device_id', "VARCHAR(191) NOT NULL DEFAULT ''")
+  await ensureColumn(conn, 'user_devices', 'device_permission', "VARCHAR(32) NOT NULL DEFAULT 'monitoring'")
+  await ensureColumn(conn, 'user_devices', 'schedule_permission', "VARCHAR(32) NOT NULL DEFAULT 'none'")
+  await ensureColumn(conn, 'user_devices', 'assigned_by_user_id', 'BIGINT UNSIGNED NULL')
+  await ensureColumn(conn, 'user_devices', 'updated_at', 'VARCHAR(64) NULL')
+  await ensureColumn(conn, 'device_schedules', 'created_by_user_id', 'BIGINT UNSIGNED NULL')
   await ensureColumn(conn, 'device_schedules', 'window_group_id', 'VARCHAR(191) NULL')
   await ensureColumn(conn, 'device_schedules', 'window_start_minute', 'INT NULL')
   await ensureColumn(conn, 'device_schedules', 'window_end_minute', 'INT NULL')
@@ -175,6 +183,40 @@ async function ensureSchemaCompatibility(conn) {
     `UPDATE devices
         SET mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)
       WHERE mqtt_device_id IS NULL OR TRIM(mqtt_device_id) = ''`,
+  )
+  await conn.query(
+    `UPDATE users
+        SET role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
+            is_active = COALESCE(is_active, 1),
+            updated_at = COALESCE(updated_at, created_at, ?)
+      WHERE role IS NULL OR TRIM(role) = ''
+         OR is_active IS NULL
+         OR updated_at IS NULL`,
+    [new Date().toISOString()],
+  )
+  await conn.query(
+    `UPDATE user_devices
+        SET device_permission = CASE
+              WHEN role = 'owner' THEN 'manage'
+              WHEN device_permission IN ('monitoring', 'control', 'manage') THEN device_permission
+              ELSE 'monitoring'
+            END,
+            schedule_permission = CASE
+              WHEN role = 'owner' THEN 'manage'
+              WHEN schedule_permission IN ('none', 'monitoring', 'manage') THEN schedule_permission
+              ELSE 'none'
+            END,
+            updated_at = COALESCE(updated_at, created_at, ?)
+      WHERE device_permission IS NULL OR device_permission NOT IN ('monitoring', 'control', 'manage')
+         OR schedule_permission IS NULL OR schedule_permission NOT IN ('none', 'monitoring', 'manage')
+         OR updated_at IS NULL
+         OR role = 'owner'`,
+    [new Date().toISOString()],
+  )
+  await conn.query(
+    `UPDATE device_schedules
+        SET created_by_user_id = COALESCE(created_by_user_id, user_id)
+      WHERE created_by_user_id IS NULL`,
   )
 }
 
@@ -193,10 +235,14 @@ async function seedDefaults(conn) {
   const passwordHash = await bcrypt.hash(adminPassword, 12)
 
   await conn.query(
-    `INSERT INTO users (email, password_hash, created_at)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)`,
-    [adminEmail, passwordHash, nowIso],
+    `INSERT INTO users (email, password_hash, role, is_active, created_at, updated_at)
+     VALUES (?, ?, 'admin', 1, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       password_hash = VALUES(password_hash),
+       role = 'admin',
+       is_active = 1,
+       updated_at = VALUES(updated_at)`,
+    [adminEmail, passwordHash, nowIso, nowIso],
   )
 
   const userRow = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [adminEmail])
@@ -233,9 +279,10 @@ async function seedDefaults(conn) {
     }
 
     await conn.query(
-      `INSERT IGNORE INTO user_devices (user_id, device_id, role, created_at)
-       VALUES (?, ?, 'owner', ?)`,
-      [userId, deviceId, nowIso],
+      `INSERT IGNORE INTO user_devices
+       (user_id, device_id, role, device_permission, schedule_permission, assigned_by_user_id, created_at, updated_at)
+       VALUES (?, ?, 'owner', 'manage', 'manage', ?, ?, ?)`,
+      [userId, deviceId, userId, nowIso, nowIso],
     )
   }
 

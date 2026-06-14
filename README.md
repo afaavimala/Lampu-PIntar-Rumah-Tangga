@@ -278,11 +278,29 @@ FRONTEND_VITE_API_BASE_URL= npm run deploy:worker
 
 Migrasi MariaDB akan memastikan seed default:
 - Admin email (default): `admin@example.com`
-- Admin password (default): `admin12345` (ubah di env production)
+- Admin password awal: isi `BACKEND_SEED_ADMIN_PASSWORD` / `SEED_ADMIN_PASSWORD` dengan secret kuat di env nyata.
 - Sample device (default): `lampu-ruang-tamu`
 - Demo API key (default): `demo-integration-key`
 
-Semua nilai seed bisa diubah via env `SEED_*` di backend env file.
+Semua nilai seed bisa diubah via env `SEED_*` di backend env file. Akun `SEED_ADMIN_EMAIL` selalu dipromosikan dan diaktifkan sebagai `admin`. Hash seed legacy bawaan akan di-upgrade ke password env, tetapi password yang sudah diedit dari Profile tidak ditimpa lagi saat login.
+
+## RBAC
+
+Role user:
+- `admin`: akun dari `SEED_ADMIN_EMAIL`; dapat membuka Dashboard, User Manager, Device Manager, Schedule Manager, dan Profile.
+- `member`: dibuat dari User Manager; hanya membuka Dashboard dan Profile.
+
+Permission member per device:
+- `monitoring`: read-only untuk status/realtime dan metadata yang diizinkan.
+- `control`: semua akses monitoring plus command ON/OFF.
+- `manage`: control plus edit metadata device yang sudah di-assign.
+
+Permission jadwal per device:
+- `none`: tidak melihat jadwal device tersebut.
+- `monitoring`: melihat jadwal dan run history.
+- `manage`: membuat, mengubah, pause/resume, dan menghapus jadwal.
+
+Aturan penting: `schedule_permission='manage'` hanya valid jika `device_permission` minimal `control`. User Manager mencegah kombinasi invalid ini, dan backend tetap menolak mutasi jadwal bila device masih `monitoring`.
 
 ## API v1
 
@@ -305,6 +323,16 @@ Schedules:
 - `DELETE /api/v1/schedules/{scheduleId}`
 - `GET /api/v1/schedules/{scheduleId}/runs`
 - Catatan dashboard: input jadwal memakai format waktu `HH:mm`, lalu dikonversi ke cron harian internal (`m h * * *`).
+- Admin dapat mengirim `targetUserId` saat membuat jadwal untuk member yang sudah punya schedule `manage` dan device `control/manage`.
+
+Users/Profile:
+- `GET /api/v1/profile`
+- `PATCH /api/v1/profile`
+- `GET /api/v1/users` (admin)
+- `POST /api/v1/users` (admin, membuat `member`)
+- `PATCH /api/v1/users/{userId}` (admin)
+- `GET /api/v1/users/{userId}/assignments` (admin)
+- `PUT /api/v1/users/{userId}/assignments` (admin)
 
 Open integration:
 - `GET /api/v1/integrations/capabilities`

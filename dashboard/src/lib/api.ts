@@ -3,10 +3,14 @@ import type {
   BootstrapResponse,
   CommandDispatch,
   CommandAction,
+  DevicePermission,
   DiscoveryResult,
   DeviceStatus,
+  SchedulePermission,
   ScheduleRule,
   ScheduleRun,
+  UserAssignmentsResponse,
+  UserSummary,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -91,7 +95,7 @@ function jsonHeaders(idempotencyKey?: string) {
 }
 
 export function login(email: string, password: string) {
-  return apiFetch<{ user: { id: number; email: string } }>('/api/v1/auth/login', {
+  return apiFetch<{ user: { id: number; email: string; role: string } }>('/api/v1/auth/login', {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify({ email, password }),
@@ -204,6 +208,7 @@ export function listSchedules() {
 }
 
 export function createSchedule(input: {
+  targetUserId?: number
   deviceId: string
   action: CommandAction
   cron: string
@@ -221,6 +226,7 @@ export function createSchedule(input: {
     method: 'POST',
     headers: jsonHeaders(input.idempotencyKey),
     body: JSON.stringify({
+      targetUserId: input.targetUserId,
       deviceId: input.deviceId,
       action: input.action,
       cron: input.cron,
@@ -257,4 +263,76 @@ export function deleteSchedule(scheduleId: number, idempotencyKey: string) {
 
 export function listScheduleRuns(scheduleId: number) {
   return apiFetch<ScheduleRun[]>(`/api/v1/schedules/${scheduleId}/runs`)
+}
+
+export function getProfile() {
+  return apiFetch<UserSummary>('/api/v1/profile')
+}
+
+export function updateProfile(input: {
+  email?: string
+  currentPassword?: string
+  newPassword?: string
+}) {
+  return apiFetch<UserSummary>('/api/v1/profile', {
+    method: 'PATCH',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input),
+  })
+}
+
+export function listUsers() {
+  return apiFetch<UserSummary[]>('/api/v1/users')
+}
+
+export function createUser(input: {
+  email: string
+  password: string
+  isActive: boolean
+}) {
+  return apiFetch<UserSummary>('/api/v1/users', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateUser(input: {
+  userId: number
+  email?: string
+  password?: string
+  isActive?: boolean
+}) {
+  return apiFetch<UserSummary>(`/api/v1/users/${input.userId}`, {
+    method: 'PATCH',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      email: input.email,
+      password: input.password,
+      isActive: input.isActive,
+    }),
+  })
+}
+
+export function getUserAssignments(userId: number) {
+  return apiFetch<UserAssignmentsResponse>(`/api/v1/users/${userId}/assignments`)
+}
+
+export function replaceUserAssignments(input: {
+  userId: number
+  assignments: Array<{
+    deviceId: string
+    assigned: boolean
+    devicePermission: DevicePermission
+    schedulePermission: SchedulePermission
+  }>
+}) {
+  return apiFetch<{ userId: number; assignments: UserAssignmentsResponse['assignments'] }>(
+    `/api/v1/users/${input.userId}/assignments`,
+    {
+      method: 'PUT',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ assignments: input.assignments }),
+    },
+  )
 }

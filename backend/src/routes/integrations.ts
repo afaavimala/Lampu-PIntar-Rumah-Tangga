@@ -138,6 +138,9 @@ integrationRoutes.get('/devices/discovery', requireAuth(['read']), async (c) => 
   if (!principal) {
     return fail(c, 'NOT_AUTHENTICATED', 'Authentication required', 401)
   }
+  if (principal.kind === 'user' && principal.role !== 'admin') {
+    return fail(c, 'FORBIDDEN_ADMIN_REQUIRED', 'Admin role required', 403)
+  }
 
   const waitMs = readBoundedInt(c.req.query('waitMs'), 1_200, { min: 300, max: 5_000 })
   const maxDevices = readBoundedInt(c.req.query('maxDevices'), 200, { min: 1, max: 500 })
@@ -213,6 +216,9 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
   if (!principal || principal.kind !== 'user') {
     return fail(c, 'NOT_AUTHENTICATED', 'User authentication required', 401)
   }
+  if (principal.role !== 'admin') {
+    return fail(c, 'FORBIDDEN_ADMIN_REQUIRED', 'Admin role required', 403)
+  }
 
   const parsed = await parseJsonBody(c, createDeviceSchema)
   if (!parsed.ok) {
@@ -270,10 +276,11 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
 
     await c.env.DB
       .prepare(
-        `INSERT INTO user_devices (user_id, device_id, role, created_at)
-         VALUES (?, ?, 'owner', ?)`,
+        `INSERT INTO user_devices
+         (user_id, device_id, role, device_permission, schedule_permission, assigned_by_user_id, created_at, updated_at)
+         VALUES (?, ?, 'owner', 'manage', 'manage', ?, ?, ?)`,
       )
-      .bind(principal.userId, existingDevice.id, nowIso)
+      .bind(principal.userId, existingDevice.id, principal.userId, nowIso, nowIso)
       .run()
 
     const payload = buildSuccessEnvelope(c, {
@@ -305,10 +312,11 @@ integrationRoutes.post('/devices', requireUserAuth(), async (c) => {
   const deviceInternalId = Number(createdDevice.meta.last_row_id)
   await c.env.DB
     .prepare(
-      `INSERT INTO user_devices (user_id, device_id, role, created_at)
-       VALUES (?, ?, 'owner', ?)`,
+      `INSERT INTO user_devices
+       (user_id, device_id, role, device_permission, schedule_permission, assigned_by_user_id, created_at, updated_at)
+       VALUES (?, ?, 'owner', 'manage', 'manage', ?, ?, ?)`,
     )
-    .bind(principal.userId, deviceInternalId, nowIso)
+    .bind(principal.userId, deviceInternalId, principal.userId, nowIso, nowIso)
     .run()
 
   const payload = buildSuccessEnvelope(c, {
@@ -335,6 +343,8 @@ integrationRoutes.get('/devices', requireAuth(['read']), async (c) => {
       name: device.name,
       location: device.location,
       commandChannel: device.command_channel,
+      devicePermission: device.device_permission,
+      schedulePermission: device.schedule_permission,
     })),
   )
 })
@@ -362,6 +372,8 @@ integrationRoutes.get('/devices/:deviceId', requireAuth(['read']), async (c) => 
     name: device.name,
     location: device.location,
     commandChannel: device.command_channel,
+    devicePermission: device.device_permission,
+    schedulePermission: device.schedule_permission,
   })
 })
 
@@ -388,7 +400,7 @@ integrationRoutes.patch('/devices/:deviceId', requireUserAuth(), async (c) => {
 
   await ensureDeviceCommandChannelCompatibility(c.env.DB)
 
-  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, c.req.param('deviceId'))
+  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, c.req.param('deviceId'), 'manage')
   if (deviceAccess.access === 'not_found') {
     return fail(c, 'DEVICE_NOT_FOUND', 'Device not found', 404)
   }
@@ -448,6 +460,9 @@ integrationRoutes.delete('/devices/:deviceId', requireUserAuth(), async (c) => {
   const principal = c.get('principal')
   if (!principal || principal.kind !== 'user') {
     return fail(c, 'NOT_AUTHENTICATED', 'User authentication required', 401)
+  }
+  if (principal.role !== 'admin') {
+    return fail(c, 'FORBIDDEN_ADMIN_REQUIRED', 'Admin role required', 403)
   }
 
   const idempotency = await beginIdempotentRequest(

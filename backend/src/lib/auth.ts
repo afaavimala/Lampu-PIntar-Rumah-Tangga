@@ -45,8 +45,8 @@ async function verifyUserJwt(c: Context<AppEnv>, token: string): Promise<JwtVeri
       return { principal: null, failureReason: 'AUTH_INVALID_TOKEN' }
     }
 
-    const user = await getUserById(c.env.DB, Number(decoded.sub))
-    if (!user) {
+    const user = await getUserById(c.env.DB, Number(decoded.sub), c.env.SEED_ADMIN_EMAIL)
+    if (!user || user.is_active !== 1) {
       return { principal: null, failureReason: 'AUTH_INVALID_TOKEN' }
     }
 
@@ -55,6 +55,8 @@ async function verifyUserJwt(c: Context<AppEnv>, token: string): Promise<JwtVeri
         kind: 'user',
         userId: user.id,
         email: user.email,
+        role: user.role,
+        isActive: user.is_active === 1,
         scopes: ['*'],
       },
       failureReason: null,

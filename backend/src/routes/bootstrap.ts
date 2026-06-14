@@ -15,10 +15,11 @@ bootstrapRoutes.get('/', async (c) => {
   const viewer =
     principal.kind === 'user'
       ? {
-          kind: 'user' as const,
-          id: principal.userId,
-          email: principal.email,
-        }
+        kind: 'user' as const,
+        id: principal.userId,
+        email: principal.email,
+        role: principal.role,
+      }
       : {
           kind: 'client' as const,
           id: principal.clientId,
@@ -31,6 +32,8 @@ bootstrapRoutes.get('/', async (c) => {
       name: device.name,
       location: device.location,
       commandChannel: device.command_channel,
+      devicePermission: device.device_permission,
+      schedulePermission: device.schedule_permission,
     })),
     viewer,
     realtime: {

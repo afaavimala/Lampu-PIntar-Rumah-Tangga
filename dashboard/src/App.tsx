@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { DeviceManager } from './components/DeviceManager'
 import { LoginForm } from './components/LoginForm'
+import { ProfilePanel } from './components/ProfilePanel'
 import { ScheduleManager } from './components/ScheduleManager'
+import { UserManager } from './components/UserManager'
 import { BulbIcon, DeleteIcon, EditIcon, UserCircleIcon, WifiIcon } from './components/UiIcons'
 import {
   bootstrap,
@@ -28,6 +30,7 @@ import type {
   DiscoveredDevice,
   ScheduleRule,
   ScheduleRun,
+  UserSummary,
 } from './lib/types'
 
 type DeviceState = {
@@ -38,6 +41,7 @@ type DeviceState = {
 }
 
 type DeviceStateMap = Record<string, DeviceState>
+type AppView = 'dashboard' | 'users' | 'profile'
 
 type LampView = {
   device: Device
@@ -143,6 +147,8 @@ export default function App() {
   const [scheduleBusy, setScheduleBusy] = useState(false)
   const [initialized, setInitialized] = useState(false)
   const [hasSession, setHasSession] = useState(false)
+  const [activeView, setActiveView] = useState<AppView>('dashboard')
+  const [viewer, setViewer] = useState<BootstrapResponse['viewer']>(null)
   const [viewerLabel, setViewerLabel] = useState('Akun')
   const [authError, setAuthError] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
@@ -163,6 +169,7 @@ export default function App() {
 
   const realtimeRef = useRef<RealtimeClient | null>(null)
   const isLoggedIn = initialized && hasSession
+  const isAdmin = viewer?.kind === 'user' && viewer.role === 'admin'
 
   const refreshScheduleData = useCallback(async (preferredSelection: number | null) => {
     const rules = await listSchedules()
@@ -187,7 +194,9 @@ export default function App() {
 
     if (!bootstrapData.realtime) {
       setHasSession(false)
+      setViewer(null)
       setViewerLabel('Akun')
+      setActiveView('dashboard')
       setDevices([])
       setDeviceState({})
       setDiscoveredDevices([])
@@ -206,6 +215,7 @@ export default function App() {
     }
 
     setHasSession(true)
+    setViewer(bootstrapData.viewer)
     setViewerLabel(resolveViewerLabel(bootstrapData.viewer))
     setDevices(bootstrapData.devices)
     setDiscoveredDevices((prev) => syncDiscoveredDevicesWithOwned(prev, bootstrapData.devices))
@@ -291,6 +301,7 @@ export default function App() {
       } catch {
         if (mounted) {
           setHasSession(false)
+          setViewer(null)
           setDevices([])
           setSchedules([])
           setSelectedScheduleId(null)
@@ -331,6 +342,12 @@ export default function App() {
   }, [isLoggedIn])
 
   useEffect(() => {
+    if (activeView === 'users' && !isAdmin) {
+      setActiveView('dashboard')
+    }
+  }, [activeView, isAdmin])
+
+  useEffect(() => {
     if (!editingDeviceId) {
       return
     }
@@ -341,6 +358,7 @@ export default function App() {
   }, [devices, editingDeviceId])
 
   const sortedDevices = useMemo(() => [...devices].sort((a, b) => a.name.localeCompare(b.name)), [devices])
+  const deviceById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices])
   const editingDevice = useMemo(
     () => (editingDeviceId ? devices.find((device) => device.id === editingDeviceId) ?? null : null),
     [devices, editingDeviceId],
@@ -377,6 +395,31 @@ export default function App() {
 
   const isConnected = onlineDeviceCount > 0
 
+  const canControlDevice = useCallback(
+    (device: Device) => isAdmin || device.devicePermission === 'control' || device.devicePermission === 'manage',
+    [isAdmin],
+  )
+
+  const canManageDeviceMetadata = useCallback(
+    (device: Device) => isAdmin || device.devicePermission === 'manage',
+    [isAdmin],
+  )
+
+  const canManageScheduleForDevice = useCallback(
+    (deviceId: string) => {
+      if (isAdmin) {
+        return true
+      }
+      const device = deviceById.get(deviceId)
+      if (!device) {
+        return false
+      }
+      const hasDeviceControl = device.devicePermission === 'control' || device.devicePermission === 'manage'
+      return hasDeviceControl && device.schedulePermission === 'manage'
+    },
+    [deviceById, isAdmin],
+  )
+
   async function handleLogin(email: string, password: string) {
     setAuthError(null)
     setLoading(true)
@@ -405,7 +448,9 @@ export default function App() {
       setSchedules([])
       setSelectedScheduleId(null)
       setScheduleRuns([])
+      setViewer(null)
       setViewerLabel('Akun')
+      setActiveView('dashboard')
       setHasSession(false)
       if (realtimeRef.current) {
         await realtimeRef.current.disconnect()
@@ -418,6 +463,10 @@ export default function App() {
 
   async function handleToggleLamp(lamp: LampView) {
     const deviceId = lamp.device.id
+    if (!canControlDevice(lamp.device)) {
+      setGlobalError('Permission monitoring hanya dapat membaca status device.')
+      return
+    }
     if (pendingToggleByDevice[deviceId]) {
       return
     }
@@ -685,6 +734,19 @@ export default function App() {
     }
   }
 
+  function handleProfileUpdated(user: UserSummary) {
+    setViewer((prev) =>
+      prev?.kind === 'user'
+        ? {
+            ...prev,
+            email: user.email,
+            role: user.role,
+          }
+        : prev,
+    )
+    setViewerLabel(user.email)
+  }
+
   if (!initialized || (!isLoggedIn && loading)) {
     return (
       <main className="loading-screen">
@@ -708,22 +770,64 @@ export default function App() {
                 SmartHome <span>IoT</span>
               </h1>
             </div>
-            <button
-              type="button"
-              className="profile-pill"
-              onClick={() => void handleLogout()}
-              disabled={loading}
-              title="Logout"
-            >
-              <span>Logout ({viewerLabel})</span>
-              <UserCircleIcon className="profile-icon" />
-            </button>
+            <nav className="view-tabs" aria-label="Navigasi dashboard">
+              <button
+                type="button"
+                className={`view-tab ${activeView === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveView('dashboard')}
+              >
+                Dashboard
+              </button>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  className={`view-tab ${activeView === 'users' ? 'active' : ''}`}
+                  onClick={() => setActiveView('users')}
+                >
+                  User Manager
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className={`view-tab ${activeView === 'profile' ? 'active' : ''}`}
+                onClick={() => setActiveView('profile')}
+              >
+                Profile
+              </button>
+            </nav>
+            <div className="account-actions">
+              <button
+                type="button"
+                className="profile-pill"
+                onClick={() => setActiveView('profile')}
+                disabled={loading}
+                title="Profile"
+              >
+                <span>{viewerLabel}</span>
+                <UserCircleIcon className="profile-icon" />
+              </button>
+              <button
+                type="button"
+                className="logout-button"
+                onClick={() => void handleLogout()}
+                disabled={loading}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </header>
 
         <section className="dashboard-content">
-          <h2>Lampu Pintar</h2>
           {globalError ? <p className="error global-error">{globalError}</p> : null}
+
+          {activeView === 'profile' ? (
+            <ProfilePanel onProfileUpdated={handleProfileUpdated} />
+          ) : activeView === 'users' && isAdmin ? (
+            <UserManager />
+          ) : (
+            <>
+          <h2>Lampu Pintar</h2>
 
           <div className="dashboard-grid">
             <section className="lamp-list">
@@ -733,7 +837,10 @@ export default function App() {
                   <p>Tambahkan device baru di panel manajemen untuk mulai kontrol lampu.</p>
                 </article>
               ) : (
-                lamps.map((lamp) => (
+                lamps.map((lamp) => {
+                  const canEditLamp = canManageDeviceMetadata(lamp.device)
+                  const canToggleLamp = canControlDevice(lamp.device)
+                  return (
                   <article key={lamp.device.id} className={`lamp-card ${lamp.power === 'ON' ? 'is-on' : 'is-off'}`}>
                     <div className={`lamp-icon-shell ${lamp.power === 'ON' ? 'on' : 'off'}`}>
                       <BulbIcon className="lamp-icon" />
@@ -741,33 +848,42 @@ export default function App() {
                     <div className="lamp-meta">
                       <div className="lamp-meta-head">
                         <h3>{lamp.title}</h3>
-                        <div className="lamp-card-actions">
-                          <button
-                            type="button"
-                            className="lamp-mini-button"
-                            disabled={loading || deviceBusy}
-                            onClick={() => handleStartEditDevice(lamp.device.id)}
-                            aria-label={`Edit ${lamp.title}`}
-                            title={`Edit ${lamp.title}`}
-                          >
-                            <EditIcon className="lamp-mini-icon" />
-                          </button>
-                          <button
-                            type="button"
-                            className="lamp-mini-button danger"
-                            disabled={loading || deviceBusy}
-                            onClick={() => void handleDeleteDevice(lamp.device)}
-                            aria-label={`Hapus ${lamp.title}`}
-                            title={`Hapus ${lamp.title}`}
-                          >
-                            <DeleteIcon className="lamp-mini-icon" />
-                          </button>
-                        </div>
+                        {canEditLamp || isAdmin ? (
+                          <div className="lamp-card-actions">
+                            {canEditLamp ? (
+                              <button
+                                type="button"
+                                className="lamp-mini-button"
+                                disabled={loading || deviceBusy}
+                                onClick={() => handleStartEditDevice(lamp.device.id)}
+                                aria-label={`Edit ${lamp.title}`}
+                                title={`Edit ${lamp.title}`}
+                              >
+                                <EditIcon className="lamp-mini-icon" />
+                              </button>
+                            ) : null}
+                            {isAdmin ? (
+                              <button
+                                type="button"
+                                className="lamp-mini-button danger"
+                                disabled={loading || deviceBusy}
+                                onClick={() => void handleDeleteDevice(lamp.device)}
+                                aria-label={`Hapus ${lamp.title}`}
+                                title={`Hapus ${lamp.title}`}
+                              >
+                                <DeleteIcon className="lamp-mini-icon" />
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <p className="lamp-subtitle">
                         {lamp.device.id}
                         {lamp.device.location ? ` • ${lamp.device.location}` : ''}
                         {` • cmd: ${lamp.device.commandChannel}`}
+                        {!isAdmin
+                          ? ` • device: ${lamp.device.devicePermission} • jadwal: ${lamp.device.schedulePermission}`
+                          : ''}
                       </p>
                       <p className={`lamp-power ${lamp.power === 'ON' ? 'on' : 'off'}`}>{lamp.power}</p>
                       <p className="lamp-statusline">
@@ -778,14 +894,16 @@ export default function App() {
                       type="button"
                       className={`lamp-switch ${lamp.power === 'ON' ? 'on' : 'off'}`}
                       onClick={() => void handleToggleLamp(lamp)}
-                      disabled={loading || deviceBusy || !!pendingToggleByDevice[lamp.device.id]}
+                      disabled={loading || deviceBusy || !canToggleLamp || !!pendingToggleByDevice[lamp.device.id]}
                       aria-label={`${lamp.title} switch`}
+                      title={canToggleLamp ? `${lamp.title} switch` : 'Monitoring only'}
                     >
                       <span className="lamp-switch-label">{lamp.power}</span>
                       <span className="lamp-switch-knob" />
                     </button>
                   </article>
-                ))
+                  )
+                })
               )}
             </section>
 
@@ -832,6 +950,7 @@ export default function App() {
           </div>
 
           <section className="management-grid">
+            {isAdmin || editingDevice ? (
             <DeviceManager
               onCreateDevice={handleCreateDevice}
               onUpdateDevice={handleUpdateDevice}
@@ -846,7 +965,9 @@ export default function App() {
               discoveryScannedAt={discoveryScannedAt}
               discoveryWaitMs={discoveryWaitMs}
               busy={deviceBusy}
+              allowCreateDiscover={isAdmin}
             />
+            ) : null}
             <ScheduleManager
               devices={sortedDevices}
               schedules={schedules}
@@ -857,9 +978,12 @@ export default function App() {
               onToggleEnabled={handleToggleScheduleEnabled}
               onDelete={handleDeleteSchedule}
               onUpdate={handleUpdateSchedule}
+              canManageSchedule={canManageScheduleForDevice}
               busy={scheduleBusy}
             />
           </section>
+            </>
+          )}
         </section>
       </div>
     </main>

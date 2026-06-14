@@ -1,4 +1,7 @@
 export type CommandAction = 'ON' | 'OFF'
+export type UserRole = 'admin' | 'member'
+export type DevicePermission = 'monitoring' | 'control' | 'manage'
+export type SchedulePermission = 'none' | 'monitoring' | 'manage'
 
 export type ApiEnvelope<T> = {
   success: boolean
@@ -20,6 +23,32 @@ export type Device = {
   name: string
   location: string | null
   commandChannel: string
+  devicePermission: DevicePermission
+  schedulePermission: SchedulePermission
+}
+
+export type UserSummary = {
+  id: number
+  email: string
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+  updatedAt: string | null
+}
+
+export type UserAssignment = {
+  deviceId: string
+  name: string
+  location: string | null
+  commandChannel: string
+  assigned: boolean
+  devicePermission: DevicePermission
+  schedulePermission: SchedulePermission
+}
+
+export type UserAssignmentsResponse = {
+  user: UserSummary
+  assignments: UserAssignment[]
 }
 
 export type DiscoveredDevice = {
@@ -52,6 +81,7 @@ export type BootstrapResponse = {
         kind: 'user'
         id: number
         email: string
+        role: UserRole
       }
     | {
         kind: 'client'
@@ -83,6 +113,8 @@ export type DeviceStatus = {
 export type ScheduleRule = {
   id: number
   userId: number
+  userEmail: string | null
+  createdByUserId: number | null
   deviceId: string
   action: CommandAction
   cron: string

@@ -16,6 +16,42 @@ openApiRoutes.get('/openapi.json', (c) => {
       '/api/v1/auth/login': { post: { summary: 'Login user' } },
       '/api/v1/auth/refresh': { post: { summary: 'Refresh access token and rotate refresh session' } },
       '/api/v1/auth/logout': { post: { summary: 'Logout user' } },
+      '/api/v1/profile': {
+        get: {
+          summary: 'Get current user profile with role',
+          responses: {
+            200: { description: 'Current user profile', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSummaryEnvelope' } } } },
+          },
+        },
+        patch: {
+          summary: 'Update current user email/password',
+          requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/ProfilePatch' } } } },
+          responses: {
+            200: { description: 'Updated profile', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSummaryEnvelope' } } } },
+          },
+        },
+      },
+      '/api/v1/users': {
+        get: { summary: 'Admin: list users' },
+        post: {
+          summary: 'Admin: create member user',
+          requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateUserRequest' } } } },
+        },
+      },
+      '/api/v1/users/{userId}': {
+        patch: {
+          summary: 'Admin: update member email/password/status',
+          requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/PatchUserRequest' } } } },
+        },
+      },
+      '/api/v1/users/{userId}/assignments': {
+        get: { summary: 'Admin: list member device/schedule assignments' },
+        put: {
+          summary: 'Admin: replace member device/schedule assignments',
+          description: 'schedulePermission=manage requires devicePermission control or manage.',
+          requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/ReplaceAssignmentsRequest' } } } },
+        },
+      },
       '/api/v1/bootstrap': { get: { summary: 'Bootstrap dashboard session' } },
       '/api/v1/commands/execute': { post: { summary: 'Publish command via backend proxy' } },
       '/api/v1/status': { get: { summary: 'Fallback status list' } },
@@ -52,6 +88,115 @@ openApiRoutes.get('/openapi.json', (c) => {
       },
       '/api/v1/openapi.json': {
         get: { summary: 'OpenAPI document' },
+      },
+    },
+    components: {
+      schemas: {
+        ApiEnvelopeBase: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            error: { type: ['object', 'null'] },
+            meta: { type: 'object' },
+          },
+          required: ['success', 'error', 'meta'],
+        },
+        UserRole: { type: 'string', enum: ['admin', 'member'] },
+        DevicePermission: { type: 'string', enum: ['monitoring', 'control', 'manage'] },
+        SchedulePermission: { type: 'string', enum: ['none', 'monitoring', 'manage'] },
+        UserSummary: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            email: { type: 'string', format: 'email' },
+            role: { $ref: '#/components/schemas/UserRole' },
+            isActive: { type: 'boolean' },
+            createdAt: { type: 'string' },
+            updatedAt: { type: ['string', 'null'] },
+          },
+          required: ['id', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
+        },
+        UserSummaryEnvelope: {
+          allOf: [
+            { $ref: '#/components/schemas/ApiEnvelopeBase' },
+            {
+              type: 'object',
+              properties: {
+                data: { $ref: '#/components/schemas/UserSummary' },
+              },
+              required: ['data'],
+            },
+          ],
+        },
+        ProfilePatch: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', format: 'email' },
+            currentPassword: { type: 'string', minLength: 8, maxLength: 128 },
+            newPassword: { type: 'string', minLength: 8, maxLength: 128 },
+          },
+        },
+        CreateUserRequest: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', format: 'email' },
+            password: { type: 'string', minLength: 8, maxLength: 128 },
+            isActive: { type: 'boolean', default: true },
+          },
+          required: ['email', 'password'],
+        },
+        PatchUserRequest: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', format: 'email' },
+            password: { type: 'string', minLength: 8, maxLength: 128 },
+            isActive: { type: 'boolean' },
+          },
+        },
+        UserAssignment: {
+          type: 'object',
+          properties: {
+            deviceId: { type: 'string' },
+            name: { type: 'string' },
+            location: { type: ['string', 'null'] },
+            commandChannel: { type: 'string' },
+            assigned: { type: 'boolean' },
+            devicePermission: { $ref: '#/components/schemas/DevicePermission' },
+            schedulePermission: { $ref: '#/components/schemas/SchedulePermission' },
+          },
+          required: ['deviceId', 'name', 'location', 'commandChannel', 'assigned', 'devicePermission', 'schedulePermission'],
+        },
+        ReplaceAssignmentsRequest: {
+          type: 'object',
+          properties: {
+            assignments: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  deviceId: { type: 'string' },
+                  assigned: { type: 'boolean' },
+                  devicePermission: { $ref: '#/components/schemas/DevicePermission' },
+                  schedulePermission: { $ref: '#/components/schemas/SchedulePermission' },
+                },
+                required: ['deviceId', 'assigned', 'devicePermission', 'schedulePermission'],
+              },
+            },
+          },
+          required: ['assignments'],
+        },
+        Device: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            location: { type: ['string', 'null'] },
+            commandChannel: { type: 'string' },
+            devicePermission: { $ref: '#/components/schemas/DevicePermission' },
+            schedulePermission: { $ref: '#/components/schemas/SchedulePermission' },
+          },
+          required: ['id', 'name', 'location', 'commandChannel', 'devicePermission', 'schedulePermission'],
+        },
       },
     },
   }

@@ -49,7 +49,7 @@ async function resolveCommandContext(c: Context<AppEnv>, input: {
     }
   }
 
-  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, input.deviceId)
+  const deviceAccess = await resolveDeviceAccess(c.env.DB, principal, input.deviceId, 'control')
   if (deviceAccess.access === 'not_found') {
     return {
       ok: false as const,

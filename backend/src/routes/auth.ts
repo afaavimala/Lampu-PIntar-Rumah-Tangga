@@ -6,15 +6,18 @@ import type { AppEnv } from '../types/app'
 import { parseJsonBody } from '../lib/body'
 import {
   createAuthSession,
+  ensureRbacCompatibility,
+  ensureSeedAdminUser,
   findAuthSessionByRefreshTokenHash,
   getUserByEmail,
+  isLegacySeedAdminPasswordHash,
   revokeAuthSessionByRefreshTokenHash,
   rotateAuthSession,
   updateUserPasswordHash,
 } from '../lib/db'
 import { createUserJwt } from '../lib/auth'
 import { fail, ok } from '../lib/response'
-import { verifyPassword } from '../lib/password'
+import { hashPassword, isPreferredPasswordHash, verifyPassword } from '../lib/password'
 import { applyRateLimitHeaders, consumeRateLimit, getClientIp, readPositiveInt } from '../lib/rate-limit'
 import {
   ACCESS_TOKEN_COOKIE_NAME,
@@ -100,12 +103,41 @@ authRoutes.post('/login', async (c) => {
     return fail(c, 'VALIDATION_ERROR', parsed.message, 400, { details: parsed.details })
   }
 
+  const seedAdminEmail = c.env.SEED_ADMIN_EMAIL?.trim()
+  const seedAdminPassword = c.env.SEED_ADMIN_PASSWORD?.trim()
+  const isSeedAdminLogin =
+    seedAdminEmail &&
+    seedAdminPassword &&
+    parsed.data.email.trim().toLowerCase() === seedAdminEmail.toLowerCase()
+
+  if (isSeedAdminLogin) {
+    const seedUser = await getUserByEmail(c.env.DB, seedAdminEmail)
+    if (!seedUser || isLegacySeedAdminPasswordHash(seedUser.password_hash)) {
+      await ensureSeedAdminUser(c.env.DB, {
+        email: seedAdminEmail,
+        passwordHash: await hashPassword(seedAdminPassword),
+      })
+    } else {
+      await ensureRbacCompatibility(c.env.DB, seedAdminEmail)
+    }
+  }
+
   const user = await getUserByEmail(c.env.DB, parsed.data.email)
-  if (!user) {
+  if (!user || user.is_active !== 1) {
     return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid email or password', 401)
   }
 
-  const verification = await verifyPassword(parsed.data.password, user.password_hash)
+  const seedPasswordAccepted =
+    !!isSeedAdminLogin && parsed.data.password === seedAdminPassword
+  const verification = seedPasswordAccepted
+    ? {
+        ok: true,
+        needsRehash: !isPreferredPasswordHash(user.password_hash),
+        upgradedHash: !isPreferredPasswordHash(user.password_hash)
+          ? await hashPassword(parsed.data.password)
+          : null,
+      }
+    : await verifyPassword(parsed.data.password, user.password_hash)
   if (!verification.ok) {
     return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid email or password', 401)
   }
@@ -140,6 +172,7 @@ authRoutes.post('/login', async (c) => {
     user: {
       id: user.id,
       email: user.email,
+      role: user.role,
     },
   })
 })
@@ -168,6 +201,12 @@ authRoutes.post('/refresh', async (c) => {
     await revokeAuthSessionByRefreshTokenHash(c.env.DB, refreshTokenHash)
     clearSessionCookies(c)
     return fail(c, 'AUTH_EXPIRED_TOKEN', 'Refresh token expired', 401)
+  }
+
+  if (Number(session.is_active) !== 1) {
+    await revokeAuthSessionByRefreshTokenHash(c.env.DB, refreshTokenHash)
+    clearSessionCookies(c)
+    return fail(c, 'AUTH_INVALID_TOKEN', 'User is inactive', 401)
   }
 
   const replacementRefreshToken = createOpaqueRefreshToken()
@@ -202,6 +241,7 @@ authRoutes.post('/refresh', async (c) => {
     user: {
       id: session.user_id,
       email: session.email,
+      role: session.role,
     },
   })
 })

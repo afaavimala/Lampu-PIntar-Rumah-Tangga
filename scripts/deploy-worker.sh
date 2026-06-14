@@ -184,7 +184,7 @@ fi
 
 echo "[deploy-worker] Deploying Cloudflare Worker..."
 (
-  cd "$ROOT_DIR/backend"
+  cd "$ROOT_DIR"
   npx wrangler -c "$WRANGLER_CONFIG_RUNTIME" deploy "${DEPLOY_ARGS[@]}"
 )
 

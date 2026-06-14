@@ -44,10 +44,18 @@ export type ApiKeyPrincipal = {
   scopes: string[]
 }
 
+export type UserRole = 'admin' | 'member'
+
+export type DevicePermission = 'monitoring' | 'control' | 'manage'
+
+export type SchedulePermission = 'none' | 'monitoring' | 'manage'
+
 export type UserPrincipal = {
   kind: 'user'
   userId: number
   email: string
+  role: UserRole
+  isActive: boolean
   scopes: string[]
 }
 
@@ -70,8 +78,10 @@ export type ApiErrorCode =
   | 'AUTH_INVALID_TOKEN'
   | 'AUTH_EXPIRED_TOKEN'
   | 'FORBIDDEN_DEVICE_ACCESS'
+  | 'FORBIDDEN_ADMIN_REQUIRED'
   | 'DEVICE_NOT_FOUND'
   | 'VALIDATION_ERROR'
+  | 'USER_NOT_FOUND'
   | 'SCHEDULE_NOT_FOUND'
   | 'SCHEDULE_INVALID_CRON'
   | 'SCHEDULE_INVALID_TIMEZONE'
@@ -89,4 +99,6 @@ export type DeviceRecord = {
   name: string
   location: string | null
   command_channel: string
+  device_permission: DevicePermission
+  schedule_permission: SchedulePermission
 }
