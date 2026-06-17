@@ -138,7 +138,7 @@ function resolveViewerLabel(viewer: BootstrapResponse['viewer']) {
   if (!viewer) {
     return 'Akun'
   }
-  return viewer.kind === 'user' ? viewer.email : viewer.name
+  return viewer.name
 }
 
 export default function App() {
@@ -148,6 +148,7 @@ export default function App() {
   const [initialized, setInitialized] = useState(false)
   const [hasSession, setHasSession] = useState(false)
   const [activeView, setActiveView] = useState<AppView>('dashboard')
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [viewer, setViewer] = useState<BootstrapResponse['viewer']>(null)
   const [viewerLabel, setViewerLabel] = useState('Akun')
   const [authError, setAuthError] = useState<string | null>(null)
@@ -168,8 +169,34 @@ export default function App() {
   const [uptimeSeconds, setUptimeSeconds] = useState(0)
 
   const realtimeRef = useRef<RealtimeClient | null>(null)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const isLoggedIn = initialized && hasSession
   const isAdmin = viewer?.kind === 'user' && viewer.role === 'admin'
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !accountMenuRef.current?.contains(event.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setAccountMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [accountMenuOpen])
 
   const refreshScheduleData = useCallback(async (preferredSelection: number | null) => {
     const rules = await listSchedules()
@@ -358,6 +385,11 @@ export default function App() {
   }, [devices, editingDeviceId])
 
   const sortedDevices = useMemo(() => [...devices].sort((a, b) => a.name.localeCompare(b.name)), [devices])
+  const scheduleVisibleDevices = useMemo(
+    () => sortedDevices.filter((device) => isAdmin || device.schedulePermission !== 'none'),
+    [isAdmin, sortedDevices],
+  )
+  const hasScheduleAccess = isAdmin || scheduleVisibleDevices.length > 0
   const deviceById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices])
   const editingDevice = useMemo(
     () => (editingDeviceId ? devices.find((device) => device.id === editingDeviceId) ?? null : null),
@@ -425,7 +457,7 @@ export default function App() {
     setLoading(true)
     try {
       const loginResult = await login(email, password)
-      setViewerLabel(loginResult.user.email)
+      setViewerLabel(loginResult.user.name)
       await hydrateDashboard()
     } catch (error) {
       setAuthError(toErrorMessage(error, 'Login gagal'))
@@ -739,12 +771,13 @@ export default function App() {
       prev?.kind === 'user'
         ? {
             ...prev,
+            name: user.name,
             email: user.email,
             role: user.role,
           }
         : prev,
     )
-    setViewerLabel(user.email)
+    setViewerLabel(user.name)
   }
 
   if (!initialized || (!isLoggedIn && loading)) {
@@ -774,7 +807,10 @@ export default function App() {
               <button
                 type="button"
                 className={`view-tab ${activeView === 'dashboard' ? 'active' : ''}`}
-                onClick={() => setActiveView('dashboard')}
+                onClick={() => {
+                  setActiveView('dashboard')
+                  setAccountMenuOpen(false)
+                }}
               >
                 Dashboard
               </button>
@@ -782,38 +818,55 @@ export default function App() {
                 <button
                   type="button"
                   className={`view-tab ${activeView === 'users' ? 'active' : ''}`}
-                  onClick={() => setActiveView('users')}
+                  onClick={() => {
+                    setActiveView('users')
+                    setAccountMenuOpen(false)
+                  }}
                 >
                   User Manager
                 </button>
               ) : null}
-              <button
-                type="button"
-                className={`view-tab ${activeView === 'profile' ? 'active' : ''}`}
-                onClick={() => setActiveView('profile')}
-              >
-                Profile
-              </button>
             </nav>
-            <div className="account-actions">
+            <div className="account-actions" ref={accountMenuRef}>
               <button
                 type="button"
-                className="profile-pill"
-                onClick={() => setActiveView('profile')}
+                className={`profile-pill ${activeView === 'profile' ? 'active' : ''}`}
+                onClick={() => setAccountMenuOpen((prev) => !prev)}
                 disabled={loading}
-                title="Profile"
+                title="Account"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
               >
                 <span>{viewerLabel}</span>
                 <UserCircleIcon className="profile-icon" />
               </button>
-              <button
-                type="button"
-                className="logout-button"
-                onClick={() => void handleLogout()}
-                disabled={loading}
-              >
-                Logout
-              </button>
+              {accountMenuOpen ? (
+                <div className="account-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={activeView === 'profile' ? 'active' : ''}
+                    onClick={() => {
+                      setActiveView('profile')
+                      setAccountMenuOpen(false)
+                    }}
+                  >
+                    Account
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      void handleLogout()
+                    }}
+                    disabled={loading}
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
@@ -968,19 +1021,21 @@ export default function App() {
               allowCreateDiscover={isAdmin}
             />
             ) : null}
-            <ScheduleManager
-              devices={sortedDevices}
-              schedules={schedules}
-              selectedScheduleId={selectedScheduleId}
-              scheduleRuns={scheduleRuns}
-              onSelectSchedule={handleSelectSchedule}
-              onCreate={handleCreateSchedule}
-              onToggleEnabled={handleToggleScheduleEnabled}
-              onDelete={handleDeleteSchedule}
-              onUpdate={handleUpdateSchedule}
-              canManageSchedule={canManageScheduleForDevice}
-              busy={scheduleBusy}
-            />
+            {hasScheduleAccess ? (
+              <ScheduleManager
+                devices={scheduleVisibleDevices}
+                schedules={schedules}
+                selectedScheduleId={selectedScheduleId}
+                scheduleRuns={scheduleRuns}
+                onSelectSchedule={handleSelectSchedule}
+                onCreate={handleCreateSchedule}
+                onToggleEnabled={handleToggleScheduleEnabled}
+                onDelete={handleDeleteSchedule}
+                onUpdate={handleUpdateSchedule}
+                canManageSchedule={canManageScheduleForDevice}
+                busy={scheduleBusy}
+              />
+            ) : null}
           </section>
             </>
           )}

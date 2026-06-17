@@ -17,6 +17,7 @@ bootstrapRoutes.get('/', async (c) => {
       ? {
         kind: 'user' as const,
         id: principal.userId,
+        name: principal.name,
         email: principal.email,
         role: principal.role,
       }

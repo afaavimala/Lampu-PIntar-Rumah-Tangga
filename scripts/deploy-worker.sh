@@ -49,6 +49,7 @@ WORKER_ENV="${CF_WORKER_ENV:-}"
 SYNC_SECRETS="${CF_WORKER_SYNC_SECRETS:-true}"
 KEEP_VARS="${CF_WORKER_KEEP_VARS:-true}"
 DRY_RUN="${CF_WORKER_DRY_RUN:-false}"
+AUTO_MIGRATE="${CF_WORKER_AUTO_MIGRATE:-true}"
 API_BASE_URL="$(resolve_optional_env_value "FRONTEND_VITE_API_BASE_URL" "VITE_API_BASE_URL")"
 
 if [[ -n "$WORKER_ENV" ]]; then
@@ -84,6 +85,18 @@ echo "[deploy-worker] Backend typecheck..."
   cd "$ROOT_DIR/dashboard"
   VITE_API_BASE_URL="$API_BASE_URL" npm run build
 )
+
+if is_truthy "$AUTO_MIGRATE" && ! is_truthy "$DRY_RUN"; then
+  echo "[deploy-worker] Auto-migrating remote D1 before deploy..."
+  (
+    cd "$ROOT_DIR"
+    npm run migrate:remote
+  )
+elif is_truthy "$DRY_RUN"; then
+  echo "[deploy-worker] Dry run mode: skipping remote D1 auto-migration."
+else
+  echo "[deploy-worker] Remote D1 auto-migration disabled by CF_WORKER_AUTO_MIGRATE=$AUTO_MIGRATE."
+fi
 
 append_worker_var_arg() {
   local key="$1"

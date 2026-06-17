@@ -11,6 +11,7 @@ import type {
 export type AuthSessionWithUser = {
   session_id: number
   user_id: number
+  name: string
   email: string
   role: UserRole
   is_active: number
@@ -25,6 +26,7 @@ export type AuthSessionWithUser = {
 
 export type UserRecord = {
   id: number
+  name: string
   email: string
   password_hash: string
   role: UserRole
@@ -136,6 +138,7 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
     const compatibilityTask = (async () => {
       const dialect = (db as { dialect?: string }).dialect
       if (dialect === 'mariadb') {
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN name VARCHAR(255) NOT NULL DEFAULT ''`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'member'`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN updated_at VARCHAR(64) NULL`)
@@ -151,6 +154,7 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
         await tryAddColumn(db, `ALTER TABLE user_devices ADD COLUMN updated_at VARCHAR(64) NULL`)
         await tryAddColumn(db, `ALTER TABLE device_schedules ADD COLUMN created_by_user_id BIGINT UNSIGNED NULL`)
       } else {
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN updated_at TEXT`)
@@ -171,14 +175,19 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
       await db
         .prepare(
           `UPDATE users
-           SET role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
+           SET name = CASE
+                 WHEN lower(email) = lower(COALESCE(?, '')) THEN 'Administrator'
+                 ELSE COALESCE(NULLIF(TRIM(name), ''), substr(email, 1, instr(email, '@') - 1))
+               END,
+               role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
                is_active = COALESCE(is_active, 1),
                updated_at = COALESCE(updated_at, created_at, ?)
-           WHERE role IS NULL OR TRIM(role) = ''
+           WHERE name IS NULL OR TRIM(name) = ''
+              OR role IS NULL OR TRIM(role) = ''
               OR is_active IS NULL
               OR updated_at IS NULL`,
         )
-        .bind(nowIso)
+        .bind(seedAdminEmail?.trim() ?? 'admin@example.com', nowIso)
         .run()
 
       await db
@@ -224,7 +233,10 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
     await db
       .prepare(
         `UPDATE users
-         SET role = 'admin', is_active = 1, updated_at = ?
+         SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
+             role = 'admin',
+             is_active = 1,
+             updated_at = ?
          WHERE lower(email) = lower(?)`,
       )
       .bind(new Date().toISOString(), adminEmail)
@@ -285,7 +297,7 @@ export async function getUserByEmail(db: D1Database, email: string) {
   await ensureRbacCompatibility(db)
   const row = await db
     .prepare(
-      `SELECT id, email, password_hash, role, is_active, created_at, updated_at
+      `SELECT id, name, email, password_hash, role, is_active, created_at, updated_at
        FROM users
        WHERE lower(email) = lower(?)
        LIMIT 1`,
@@ -296,6 +308,7 @@ export async function getUserByEmail(db: D1Database, email: string) {
   return row
     ? {
         ...row,
+        name: row.name || row.email.split('@')[0] || 'User',
         role: normalizeUserRole(row.role),
         is_active: Number(row.is_active),
       }
@@ -306,7 +319,7 @@ export async function getUserById(db: D1Database, id: number, seedAdminEmail?: s
   await ensureRbacCompatibility(db, seedAdminEmail)
   const row = await db
     .prepare(
-      `SELECT id, email, password_hash, role, is_active, created_at, updated_at
+      `SELECT id, name, email, password_hash, role, is_active, created_at, updated_at
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -317,6 +330,7 @@ export async function getUserById(db: D1Database, id: number, seedAdminEmail?: s
   return row
     ? {
         ...row,
+        name: row.name || row.email.split('@')[0] || 'User',
         role: normalizeUserRole(row.role),
         is_active: Number(row.is_active),
       }
@@ -332,6 +346,7 @@ export async function updateUserPasswordHash(db: D1Database, userId: number, pas
 }
 
 export async function createUser(db: D1Database, input: {
+  name: string
   email: string
   passwordHash: string
   role: UserRole
@@ -341,10 +356,10 @@ export async function createUser(db: D1Database, input: {
   const nowIso = new Date().toISOString()
   const result = await db
     .prepare(
-      `INSERT INTO users (email, password_hash, role, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (name, email, password_hash, role, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(input.email, input.passwordHash, input.role, input.isActive ? 1 : 0, nowIso, nowIso)
+    .bind(input.name, input.email, input.passwordHash, input.role, input.isActive ? 1 : 0, nowIso, nowIso)
     .run()
 
   return Number(result.meta.last_row_id)
@@ -362,7 +377,11 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
       await db
         .prepare(
           `UPDATE users
-           SET password_hash = ?, role = 'admin', is_active = 1, updated_at = ?
+           SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
+               password_hash = ?,
+               role = 'admin',
+               is_active = 1,
+               updated_at = ?
            WHERE id = ?`,
         )
         .bind(input.passwordHash, nowIso, existing.id)
@@ -373,7 +392,10 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
     await db
       .prepare(
         `UPDATE users
-         SET role = 'admin', is_active = 1, updated_at = ?
+         SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
+             role = 'admin',
+             is_active = 1,
+             updated_at = ?
          WHERE id = ?`,
       )
       .bind(nowIso, existing.id)
@@ -382,6 +404,7 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
   }
 
   return createUser(db, {
+    name: 'Administrator',
     email: input.email,
     passwordHash: input.passwordHash,
     role: 'admin',
@@ -393,7 +416,7 @@ export async function listUsers(db: D1Database) {
   await ensureRbacCompatibility(db)
   const result = await db
     .prepare(
-      `SELECT id, email, role, is_active, created_at, updated_at
+      `SELECT id, name, email, role, is_active, created_at, updated_at
        FROM users
        ORDER BY role ASC, id ASC`,
     )
@@ -408,6 +431,7 @@ export async function listUsers(db: D1Database) {
 
 export async function updateUserProfile(db: D1Database, userId: number, input: {
   email?: string
+  name?: string
   passwordHash?: string
 }) {
   await ensureRbacCompatibility(db)
@@ -416,6 +440,10 @@ export async function updateUserProfile(db: D1Database, userId: number, input: {
   if (input.email !== undefined) {
     updates.push('email = ?')
     params.push(input.email)
+  }
+  if (input.name !== undefined) {
+    updates.push('name = ?')
+    params.push(input.name)
   }
   if (input.passwordHash !== undefined) {
     updates.push('password_hash = ?')
@@ -431,6 +459,7 @@ export async function updateUserProfile(db: D1Database, userId: number, input: {
 
 export async function updateUserByAdmin(db: D1Database, userId: number, input: {
   email?: string
+  name?: string
   passwordHash?: string
   isActive?: boolean
 }) {
@@ -440,6 +469,10 @@ export async function updateUserByAdmin(db: D1Database, userId: number, input: {
   if (input.email !== undefined) {
     updates.push('email = ?')
     params.push(input.email)
+  }
+  if (input.name !== undefined) {
+    updates.push('name = ?')
+    params.push(input.name)
   }
   if (input.passwordHash !== undefined) {
     updates.push('password_hash = ?')
@@ -493,6 +526,7 @@ export async function findAuthSessionByRefreshTokenHash(db: D1Database, refreshT
   return db
     .prepare(
       `SELECT s.id AS session_id, s.user_id, u.email, u.role, u.is_active,
+              u.name,
               s.refresh_token_hash, s.expires_at, s.created_at,
               s.last_used_at, s.rotated_at, s.revoked_at, s.replaced_by_session_id
        FROM auth_sessions s
@@ -838,10 +872,12 @@ export async function getDeviceByScheduleIdForPrincipal(
                 d.device_id AS public_device_id, d.name, d.location
          FROM device_schedules ds
          INNER JOIN devices d ON d.id = ds.device_id
-         WHERE ds.id = ? AND ds.user_id = ?
+         INNER JOIN user_devices ud ON ud.device_id = ds.device_id AND ud.user_id = ?
+         WHERE ds.id = ?
+           AND ud.schedule_permission IN ('monitoring', 'manage')
          LIMIT 1`,
       )
-      .bind(scheduleId, principal.userId)
+      .bind(principal.userId, scheduleId)
       .first<Record<string, unknown>>()
   }
 

@@ -271,6 +271,8 @@ body::before {
 .dashboard-topbar {
   width: 100%;
   margin-top: 0;
+  position: relative;
+  z-index: 20;
   border-top: 1px solid rgba(176, 202, 255, 0.24);
   border-bottom: 1px solid rgba(176, 202, 255, 0.22);
   background: linear-gradient(180deg, rgba(67, 116, 233, 0.34), rgba(16, 40, 121, 0.58));
@@ -353,6 +355,7 @@ body::before {
 }
 
 .account-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -366,7 +369,8 @@ body::before {
 }
 
 .profile-pill {
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: #e3eeff;
   font: 500 clamp(1.05rem, 1.9vw, 1.9rem) / 1 'Manrope', 'Segoe UI', sans-serif;
@@ -378,6 +382,12 @@ body::before {
   min-width: 0;
   max-width: min(56%, 560px);
   flex: 0 1 auto;
+}
+
+.profile-pill.active,
+.profile-pill[aria-expanded='true'] {
+  border-color: rgba(119, 210, 255, 0.52);
+  background: rgba(8, 24, 84, 0.3);
 }
 
 .profile-pill span {
@@ -398,6 +408,55 @@ body::before {
   min-height: 36px;
   border-color: rgba(255, 174, 174, 0.48);
   background: rgba(90, 22, 48, 0.34);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 30;
+  width: min(220px, calc(100vw - 1.2rem));
+  border: 1px solid rgba(143, 183, 255, 0.42);
+  border-radius: 12px;
+  background:
+    linear-gradient(160deg, rgba(31, 76, 176, 0.92), rgba(7, 24, 83, 0.96)),
+    rgba(7, 24, 83, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 16px 36px rgba(3, 10, 42, 0.46);
+  padding: 0.38rem;
+  display: grid;
+  gap: 0.32rem;
+}
+
+.account-menu button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #eaf4ff;
+  font: 700 0.86rem/1 'Manrope', 'Segoe UI', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  padding: 0 0.75rem;
+}
+
+.account-menu button:hover,
+.account-menu button:focus-visible,
+.account-menu button.active {
+  outline: none;
+  border-color: rgba(119, 210, 255, 0.48);
+  background: rgba(67, 146, 255, 0.22);
+}
+
+.account-menu button.danger {
+  color: #ffd6dc;
+}
+
+.account-menu button.danger:hover,
+.account-menu button.danger:focus-visible {
+  border-color: rgba(255, 174, 174, 0.46);
+  background: rgba(128, 35, 57, 0.38);
 }
 
 .dashboard-content {
@@ -427,6 +486,17 @@ body::before {
   margin-top: 1.7rem;
   display: grid;
   gap: 1.35rem;
+}
+
+@media (min-width: 1100px) {
+  .management-grid {
+    grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr);
+    align-items: start;
+  }
+
+  .management-grid > .schedule-shell:only-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .lamp-list {
@@ -1017,7 +1087,7 @@ body::before {
   border-radius: 12px;
   border: 1px solid rgba(145, 181, 242, 0.34);
   background: rgba(11, 27, 89, 0.55);
-  padding: 0.8rem;
+  padding: 0.68rem;
 }
 
 .schedule-list li.selected {
@@ -1029,8 +1099,93 @@ body::before {
   font-size: 0.96rem;
 }
 
+.schedule-summary {
+  display: grid;
+  gap: 0.52rem;
+}
+
+.schedule-title-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.schedule-title-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.14rem;
+}
+
+.schedule-title-copy strong,
+.schedule-title-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-title-copy span {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.schedule-status-pill {
+  flex: none;
+  border: 1px solid rgba(143, 212, 255, 0.42);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  color: #dff4ff;
+  background: rgba(31, 108, 226, 0.24);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.schedule-status-pill.paused {
+  border-color: rgba(255, 210, 138, 0.46);
+  color: #ffe6b6;
+  background: rgba(118, 75, 23, 0.32);
+}
+
+.schedule-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 0.36rem;
+}
+
+.schedule-chip {
+  min-width: 0;
+  border: 1px solid rgba(143, 183, 255, 0.22);
+  border-radius: 9px;
+  background: rgba(7, 24, 83, 0.38);
+  padding: 0.38rem 0.46rem;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.schedule-chip span {
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.schedule-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.schedule-chip.warning {
+  border-color: rgba(255, 210, 138, 0.34);
+  background: rgba(118, 75, 23, 0.24);
+}
+
 .schedule-actions {
-  margin-top: 0.6rem;
+  margin-top: 0.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -1283,7 +1438,7 @@ body::before {
 
   .schedule-form .weekday-picker,
   .schedule-edit-form .weekday-picker,
-  .schedule-form button,
+  .schedule-form > button,
   .schedule-edit-form .schedule-actions,
   .schedule-form .small,
   .schedule-edit-form .small {
@@ -1306,7 +1461,7 @@ body::before {
 .weekday-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.35rem;
+  gap: 0.28rem;
 }
 
 .weekday-toggle {
@@ -1316,11 +1471,11 @@ body::before {
   justify-content: center;
   border: 1px solid rgba(133, 175, 238, 0.48);
   border-radius: 8px;
-  min-height: 34px;
-  padding: 0 0.4rem;
+  min-height: 28px;
+  padding: 0 0.28rem;
   background: rgba(8, 27, 91, 0.55);
   color: #d8e8ff;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
   overflow: hidden;
@@ -1641,7 +1796,7 @@ body::before {
   }
 
   .weekday-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .signal-bars {
@@ -1755,7 +1910,7 @@ body::before {
   .account-actions {
     width: 100%;
     max-width: 100%;
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .view-tab,
@@ -1820,7 +1975,7 @@ body::before {
   }
 
   .weekday-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .panel-shell {

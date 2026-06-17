@@ -96,6 +96,7 @@ describe('auth and access verification', () => {
         if (sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
           return {
             id: 1,
+            name: 'User A',
             email: 'user-a@example.com',
             password_hash: 'unused',
             role: 'member',

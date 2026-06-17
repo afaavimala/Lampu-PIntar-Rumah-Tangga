@@ -11,6 +11,7 @@ type QueryResolver = (
 
 type TestUser = {
   id: number
+  name?: string
   email: string
   role: 'admin' | 'member'
   isActive: number
@@ -80,6 +81,7 @@ function compatibilityRun(sql: string): DbRunResult | null {
 function userRow(user: TestUser) {
   return {
     id: user.id,
+    name: user.name ?? user.email.split('@')[0],
     email: user.email,
     password_hash: 'unused',
     role: user.role,
@@ -168,13 +170,40 @@ function createPermissionDb(input: {
         }
       }
       if (sql.includes('FROM device_schedules ds') && sql.includes('WHERE ds.id = ?')) {
-        return scheduleRow(input.scheduleInsertUserId ?? input.principal.id)
+        if (!input.assignment || input.assignment.schedulePermission === 'none') return null
+        if (sql.includes("ud.schedule_permission = 'manage'") && input.assignment.schedulePermission !== 'manage') return null
+        if (
+          sql.includes("ud.device_permission IN ('control', 'manage')") &&
+          input.assignment.devicePermission === 'monitoring'
+        ) {
+          return null
+        }
+        return scheduleRow(input.scheduleInsertUserId ?? target.id)
       }
       return null
     }
 
     if (mode === 'all') {
       if (sql.includes('FROM devices') && sql.includes('ORDER BY id ASC')) return [DEVICE_ROW]
+      if (sql.includes('FROM device_schedules ds')) {
+        return input.assignment && input.assignment.schedulePermission !== 'none'
+          ? [scheduleRow(input.scheduleInsertUserId ?? target.id)]
+          : []
+      }
+      if (sql.includes('FROM schedule_runs')) {
+        return [
+          {
+            id: 1,
+            schedule_id: 701,
+            planned_at: Date.now(),
+            executed_at: null,
+            request_id: null,
+            status: 'queued',
+            error_message: null,
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]
+      }
       return []
     }
 
@@ -273,6 +302,77 @@ describe('RBAC route guards', () => {
 
     expect(response.status).toBe(403)
     expect(payload.error.code).toBe('FORBIDDEN_DEVICE_ACCESS')
+  })
+
+  it('hides schedules and runs when schedule permission is none', async () => {
+    const member: TestUser = { id: 1, email: 'member@example.com', role: 'member', isActive: 1 }
+    const db = createPermissionDb({
+      principal: member,
+      target: { id: 2, email: 'owner@example.com', role: 'member', isActive: 1 },
+      assignment: {
+        userId: member.id,
+        devicePermission: 'control',
+        schedulePermission: 'none',
+      },
+      scheduleInsertUserId: 2,
+    })
+    const app = createApp()
+    const listResponse = await app.request(
+      '/api/v1/schedules',
+      { headers: { authorization: `Bearer ${await userToken(member)}` } },
+      baseEnv(db),
+    )
+    const listPayload = (await listResponse.json()) as { success: boolean; data: unknown[] }
+
+    expect(listResponse.status).toBe(200)
+    expect(listPayload.success).toBe(true)
+    expect(listPayload.data).toHaveLength(0)
+
+    const runsResponse = await app.request(
+      '/api/v1/schedules/701/runs',
+      { headers: { authorization: `Bearer ${await userToken(member)}` } },
+      baseEnv(db),
+    )
+    const runsPayload = (await runsResponse.json()) as { error: { code: string } }
+
+    expect(runsResponse.status).toBe(404)
+    expect(runsPayload.error.code).toBe('SCHEDULE_NOT_FOUND')
+  })
+
+  it('lets schedule monitoring users read schedules and runs by assigned device', async () => {
+    const member: TestUser = { id: 1, email: 'member@example.com', role: 'member', isActive: 1 }
+    const db = createPermissionDb({
+      principal: member,
+      target: { id: 2, email: 'owner@example.com', role: 'member', isActive: 1 },
+      assignment: {
+        userId: member.id,
+        devicePermission: 'monitoring',
+        schedulePermission: 'monitoring',
+      },
+      scheduleInsertUserId: 2,
+    })
+    const app = createApp()
+    const listResponse = await app.request(
+      '/api/v1/schedules',
+      { headers: { authorization: `Bearer ${await userToken(member)}` } },
+      baseEnv(db),
+    )
+    const listPayload = (await listResponse.json()) as { success: boolean; data: Array<{ userId: number }> }
+
+    expect(listResponse.status).toBe(200)
+    expect(listPayload.success).toBe(true)
+    expect(listPayload.data[0]?.userId).toBe(2)
+
+    const runsResponse = await app.request(
+      '/api/v1/schedules/701/runs',
+      { headers: { authorization: `Bearer ${await userToken(member)}` } },
+      baseEnv(db),
+    )
+    const runsPayload = (await runsResponse.json()) as { success: boolean; data: unknown[] }
+
+    expect(runsResponse.status).toBe(200)
+    expect(runsPayload.success).toBe(true)
+    expect(runsPayload.data).toHaveLength(1)
   })
 
   it('blocks schedule manage when device permission is still monitoring', async () => {
@@ -409,9 +509,10 @@ describe('RBAC route guards', () => {
         if (sql.startsWith('INSERT INTO users')) {
           member = {
             id: 2,
-            email: String(params[0]),
+            name: String(params[0]),
+            email: String(params[1]),
             role: 'member',
-            isActive: Number(params[3]),
+            isActive: Number(params[4]),
           }
           return { meta: { changes: 1, last_row_id: 2 } } satisfies DbRunResult
         }
@@ -444,6 +545,7 @@ describe('RBAC route guards', () => {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
+          name: 'Member Test',
           email: 'member@example.com',
           password: 'member12345',
           isActive: true,
@@ -451,7 +553,9 @@ describe('RBAC route guards', () => {
       },
       baseEnv(db),
     )
+    const createPayload = (await createResponse.json()) as { success: boolean; data: { name: string } }
     expect(createResponse.status).toBe(201)
+    expect(createPayload.data.name).toBe('Member Test')
 
     const assignResponse = await app.request(
       '/api/v1/users/2/assignments',
@@ -541,9 +645,10 @@ describe('RBAC route guards', () => {
       if (mode === 'first') {
         if (sql.includes('FROM auth_sessions s')) {
           return {
-            session_id: 99,
-            user_id: inactive.id,
-            email: inactive.email,
+          session_id: 99,
+          user_id: inactive.id,
+          name: 'Inactive User',
+          email: inactive.email,
             role: inactive.role,
             is_active: inactive.isActive,
             refresh_token_hash: 'hash',

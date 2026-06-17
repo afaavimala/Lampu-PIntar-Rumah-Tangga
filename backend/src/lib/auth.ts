@@ -54,6 +54,7 @@ async function verifyUserJwt(c: Context<AppEnv>, token: string): Promise<JwtVeri
       principal: {
         kind: 'user',
         userId: user.id,
+        name: user.name,
         email: user.email,
         role: user.role,
         isActive: user.is_active === 1,

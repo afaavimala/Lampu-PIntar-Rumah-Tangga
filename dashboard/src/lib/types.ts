@@ -29,6 +29,7 @@ export type Device = {
 
 export type UserSummary = {
   id: number
+  name: string
   email: string
   role: UserRole
   isActive: boolean
@@ -80,6 +81,7 @@ export type BootstrapResponse = {
     | {
         kind: 'user'
         id: number
+        name: string
         email: string
         role: UserRole
       }

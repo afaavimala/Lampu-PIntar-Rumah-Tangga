@@ -171,6 +171,7 @@ authRoutes.post('/login', async (c) => {
   return ok(c, {
     user: {
       id: user.id,
+      name: user.name,
       email: user.email,
       role: user.role,
     },
@@ -240,6 +241,7 @@ authRoutes.post('/refresh', async (c) => {
     refreshed: true,
     user: {
       id: session.user_id,
+      name: session.name,
       email: session.email,
       role: session.role,
     },

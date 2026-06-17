@@ -53,6 +53,7 @@ export type SchedulePermission = 'none' | 'monitoring' | 'manage'
 export type UserPrincipal = {
   kind: 'user'
   userId: number
+  name: string
   email: string
   role: UserRole
   isActive: boolean

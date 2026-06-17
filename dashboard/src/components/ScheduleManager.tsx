@@ -71,10 +71,65 @@ const WEEKDAYS: Array<{ key: WeekdayKey; short: string; cron: number }> = [
 
 const ALL_DAYS = WEEKDAYS.map((item) => item.key)
 const LEGACY_DAILY_CRON_PATTERN = /^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+([0-9,*]+)\s*$/
-const TIME_24H_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+const TIME_24H_PATTERN = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/
+const PRIORITY_TIMEZONES = ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura', 'UTC']
+const FALLBACK_TIMEZONES = [
+  'UTC',
+  'Asia/Jakarta',
+  'Asia/Makassar',
+  'Asia/Jayapura',
+  'Asia/Singapore',
+  'Asia/Kuala_Lumpur',
+  'Asia/Bangkok',
+  'Asia/Manila',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Australia/Perth',
+  'Australia/Sydney',
+  'Europe/London',
+  'Europe/Paris',
+  'America/New_York',
+  'America/Los_Angeles',
+]
+
+function getSupportedTimezones() {
+  try {
+    const intlWithTimezones = Intl as typeof Intl & {
+      supportedValuesOf?: (key: 'timeZone') => string[]
+    }
+    return intlWithTimezones.supportedValuesOf?.('timeZone') ?? FALLBACK_TIMEZONES
+  } catch {
+    return FALLBACK_TIMEZONES
+  }
+}
+
+const BASE_TIMEZONE_OPTIONS = (() => {
+  const supported = new Set([...PRIORITY_TIMEZONES, ...getSupportedTimezones(), ...FALLBACK_TIMEZONES])
+  return [
+    ...PRIORITY_TIMEZONES.filter((timezone) => supported.has(timezone)),
+    ...[...supported]
+      .filter((timezone) => !PRIORITY_TIMEZONES.includes(timezone))
+      .sort((a, b) => a.localeCompare(b)),
+  ]
+})()
+
+function buildTimezoneOptions(currentValues: string[]) {
+  const options = new Set(BASE_TIMEZONE_OPTIONS)
+  for (const value of currentValues) {
+    if (value.trim()) {
+      options.add(value)
+    }
+  }
+  return [
+    ...PRIORITY_TIMEZONES.filter((timezone) => options.has(timezone)),
+    ...[...options]
+      .filter((timezone) => !PRIORITY_TIMEZONES.includes(timezone))
+      .sort((a, b) => a.localeCompare(b)),
+  ]
+}
 
 function toPaddedTime(hour: number, minute: number) {
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`
 }
 
 function minuteToTime(value: number) {
@@ -100,11 +155,14 @@ function toggleDay(days: WeekdayKey[], day: WeekdayKey) {
 }
 
 function normalizeTimeInput(raw: string) {
-  const digitsOnly = raw.replace(/\D/g, '').slice(0, 4)
+  const digitsOnly = raw.replace(/\D/g, '').slice(0, 6)
   if (digitsOnly.length <= 2) {
     return digitsOnly
   }
-  return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2)}`
+  if (digitsOnly.length <= 4) {
+    return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2)}`
+  }
+  return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2, 4)}:${digitsOnly.slice(4)}`
 }
 
 function normalizeIntervalInput(raw: string) {
@@ -198,7 +256,7 @@ function fallbackTimeFromNextRun(schedule: ScheduleRule) {
     const hour = parts.find((part) => part.type === 'hour')?.value
     const minute = parts.find((part) => part.type === 'minute')?.value
     if (hour && minute) {
-      return `${hour}:${minute}`
+      return `${hour}:${minute}:00`
     }
   } catch {
     // fallback below
@@ -244,9 +302,9 @@ function Time24Input({ label, value, disabled, onChange }: Time24InputProps) {
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="HH:mm"
+        placeholder="HH:mm:ss"
         pattern={TIME_24H_PATTERN.source}
-        title="Gunakan format 24 jam HH:mm"
+        title="Gunakan format 24 jam HH:mm:ss. Detik disimpan pada resolusi menit."
         value={value}
         onChange={(event) => onChange(normalizeTimeInput(event.target.value))}
         required
@@ -275,6 +333,29 @@ function ActionInput({ label, value, disabled, onChange }: ActionInputProps) {
   )
 }
 
+type TimezoneSelectProps = {
+  label: string
+  value: string
+  disabled: boolean
+  options: string[]
+  onChange: (nextValue: string) => void
+}
+
+function TimezoneSelect({ label, value, disabled, options, onChange }: TimezoneSelectProps) {
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} required disabled={disabled}>
+        {options.map((timezone) => (
+          <option key={timezone} value={timezone}>
+            {timezone}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 type IntervalInputProps = {
   label: string
   value: number
@@ -290,7 +371,7 @@ function IntervalInput({ label, value, disabled, onChange }: IntervalInputProps)
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="contoh: 10"
+        placeholder="contoh: 1"
         value={String(value)}
         onChange={(event) => {
           const normalized = normalizeIntervalInput(event.target.value)
@@ -347,19 +428,20 @@ export function ScheduleManager({
   const [deviceIdInput, setDeviceIdInput] = useState('')
   const [timezone, setTimezone] = useState('Asia/Jakarta')
   const [activeDays, setActiveDays] = useState<WeekdayKey[]>([...ALL_DAYS])
-  const [timeFrom, setTimeFrom] = useState('18:00')
-  const [timeUntil, setTimeUntil] = useState('23:00')
+  const [timeFrom, setTimeFrom] = useState('18:00:00')
+  const [timeUntil, setTimeUntil] = useState('23:00:00')
   const [activeAction, setActiveAction] = useState<'ON' | 'OFF'>('ON')
-  const [enforceEveryMinute, setEnforceEveryMinute] = useState(10)
+  const [enforceEveryMinute, setEnforceEveryMinute] = useState(1)
 
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editTimezone, setEditTimezone] = useState('Asia/Jakarta')
   const [editDays, setEditDays] = useState<WeekdayKey[]>([...ALL_DAYS])
-  const [editTimeFrom, setEditTimeFrom] = useState('18:00')
-  const [editTimeUntil, setEditTimeUntil] = useState('23:00')
+  const [editTimeFrom, setEditTimeFrom] = useState('18:00:00')
+  const [editTimeUntil, setEditTimeUntil] = useState('23:00:00')
   const [editActiveAction, setEditActiveAction] = useState<'ON' | 'OFF'>('ON')
-  const [editEnforceEveryMinute, setEditEnforceEveryMinute] = useState(10)
+  const [editEnforceEveryMinute, setEditEnforceEveryMinute] = useState(1)
   const [editingLegacy, setEditingLegacy] = useState(false)
+  const timezoneOptions = useMemo(() => buildTimezoneOptions([timezone, editTimezone]), [timezone, editTimezone])
 
   const manageableDevices = useMemo(
     () => devices.filter((device) => canManageSchedule(device.id)),
@@ -469,6 +551,7 @@ export function ScheduleManager({
 
   return (
     <section className="schedule-shell">
+      {hasManageableDevices ? (
       <div className="schedule-create">
         <h3>Buat Jadwal Lampu</h3>
         <p className="small">
@@ -554,20 +637,15 @@ export function ScheduleManager({
             disabled={busy || !hasManageableDevices}
           />
 
-          <label>
-            Timezone
-            <input
-              value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              required
-              disabled={busy || !hasManageableDevices}
-            />
-          </label>
+          <TimezoneSelect
+            label="Timezone"
+            value={timezone}
+            options={timezoneOptions}
+            onChange={setTimezone}
+            disabled={busy || !hasManageableDevices}
+          />
 
           {!hasDevices ? <p className="small">Tambahkan device terlebih dahulu sebelum membuat jadwal.</p> : null}
-          {hasDevices && !hasManageableDevices ? (
-            <p className="small">Akses jadwal Anda saat ini read-only atau belum memenuhi permission control.</p>
-          ) : null}
           <button
             type="submit"
             disabled={
@@ -583,10 +661,14 @@ export function ScheduleManager({
           </button>
         </form>
       </div>
+      ) : null}
 
       <div className="schedule-list">
         <h3>Daftar Jadwal Lampu</h3>
-        <p className="small">Di luar rentang waktu, kondisi lampu tidak dipaksa berubah oleh jadwal.</p>
+        <p className="small">
+          Di luar rentang waktu, kondisi lampu tidak dipaksa berubah oleh jadwal.
+          {!hasManageableDevices ? ' Akses Anda untuk jadwal ini read-only.' : ''}
+        </p>
         {windows.length === 0 ? <p>Belum ada jadwal.</p> : null}
         <ul>
           {windows.map((window) => {
@@ -671,15 +753,13 @@ export function ScheduleManager({
                       disabled={busy || !canMutateWindow}
                     />
 
-                    <label>
-                      Timezone
-                      <input
-                        value={editTimezone}
-                        onChange={(event) => setEditTimezone(event.target.value)}
-                        required
-                        disabled={busy || !canMutateWindow}
-                      />
-                    </label>
+                    <TimezoneSelect
+                      label="Timezone"
+                      value={editTimezone}
+                      options={timezoneOptions}
+                      onChange={setEditTimezone}
+                      disabled={busy || !canMutateWindow}
+                    />
 
                     {!canMutateWindow ? <p className="small">Jadwal ini read-only untuk permission Anda.</p> : null}
 
@@ -716,17 +796,48 @@ export function ScheduleManager({
                     </div>
                   </form>
                 ) : (
-                  <div>
-                    <strong>{deviceNameById.get(window.deviceId) ?? window.deviceId}</strong> ({window.deviceId})
-                    <p className="small">
-                      Hari: {describeDays(window.days)} | Rentang: {window.fromTime} - {window.untilTime} | Kondisi:{' '}
-                      {window.action} | Interval: {window.intervalMinutes > 0 ? `${window.intervalMinutes} menit` : 'legacy'} | TZ:{' '}
-                      {window.timezone}
-                    </p>
-                    <p className="small">
-                      Next: {window.nextRunAt != null ? formatEpoch24(window.nextRunAt) : '-'}
-                      {window.legacy ? ' | mode: legacy/custom' : ''}
-                    </p>
+                  <div className="schedule-summary">
+                    <div className="schedule-title-row">
+                      <div className="schedule-title-copy">
+                        <strong>{deviceNameById.get(window.deviceId) ?? window.deviceId}</strong>
+                        <span>{window.deviceId}</span>
+                      </div>
+                      <span className={`schedule-status-pill ${allEnabled ? 'enabled' : 'paused'}`}>
+                        {allEnabled ? 'Aktif' : 'Paused'}
+                      </span>
+                    </div>
+                    <div className="schedule-chip-grid">
+                      <span className="schedule-chip">
+                        <span>Hari</span>
+                        <strong>{describeDays(window.days)}</strong>
+                      </span>
+                      <span className="schedule-chip">
+                        <span>Waktu</span>
+                        <strong>{window.fromTime} - {window.untilTime}</strong>
+                      </span>
+                      <span className="schedule-chip">
+                        <span>Kondisi</span>
+                        <strong>{window.action}</strong>
+                      </span>
+                      <span className="schedule-chip">
+                        <span>Interval</span>
+                        <strong>{window.intervalMinutes > 0 ? `${window.intervalMinutes} menit` : 'legacy'}</strong>
+                      </span>
+                      <span className="schedule-chip">
+                        <span>TZ</span>
+                        <strong>{window.timezone}</strong>
+                      </span>
+                      <span className="schedule-chip">
+                        <span>Next</span>
+                        <strong>{window.nextRunAt != null ? formatEpoch24(window.nextRunAt) : '-'}</strong>
+                      </span>
+                      {window.legacy ? (
+                        <span className="schedule-chip warning">
+                          <span>Mode</span>
+                          <strong>legacy/custom</strong>
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 )}
 
@@ -752,7 +863,7 @@ export function ScheduleManager({
                       setEditTimeFrom(window.fromTime)
                       setEditTimeUntil(window.untilTime)
                       setEditActiveAction(window.action)
-                      setEditEnforceEveryMinute(window.intervalMinutes > 0 ? window.intervalMinutes : 10)
+                      setEditEnforceEveryMinute(window.intervalMinutes > 0 ? window.intervalMinutes : 1)
                       setEditingLegacy(window.legacy)
                     }}
                   >

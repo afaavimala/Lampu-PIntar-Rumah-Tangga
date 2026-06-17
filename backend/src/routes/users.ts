@@ -18,6 +18,7 @@ import { fail, ok } from '../lib/response'
 import { requireAdminUser } from '../middleware/auth'
 
 const createUserSchema = z.object({
+  name: z.string().trim().min(1).max(255),
   email: z.email(),
   password: z.string().min(8).max(128),
   isActive: z.boolean().optional().default(true),
@@ -26,12 +27,16 @@ const createUserSchema = z.object({
 const patchUserSchema = z
   .object({
     email: z.email().optional(),
+    name: z.string().trim().min(1).max(255).optional(),
     password: z.string().min(8).max(128).optional(),
     isActive: z.boolean().optional(),
   })
   .refine(
     (value) =>
-      value.email !== undefined || value.password !== undefined || value.isActive !== undefined,
+      value.name !== undefined ||
+      value.email !== undefined ||
+      value.password !== undefined ||
+      value.isActive !== undefined,
     {
       message: 'At least one editable field is required',
     },
@@ -53,6 +58,7 @@ export const userRoutes = new Hono<AppEnv>()
 function toUserDto(user: {
   id: number
   email: string
+  name: string
   role: string
   is_active: number
   created_at: string
@@ -60,6 +66,7 @@ function toUserDto(user: {
 }) {
   return {
     id: Number(user.id),
+    name: user.name,
     email: user.email,
     role: user.role,
     isActive: Number(user.is_active) === 1,
@@ -85,6 +92,7 @@ userRoutes.post('/users', requireAdminUser(), async (c) => {
   }
 
   const userId = await createUser(c.env.DB, {
+    name: parsed.data.name,
     email: parsed.data.email,
     passwordHash: await hashPassword(parsed.data.password),
     role: 'member',
@@ -130,6 +138,7 @@ userRoutes.patch('/users/:userId', requireAdminUser(), async (c) => {
   await updateUserByAdmin(c.env.DB, userId, {
     email: parsed.data.email,
     passwordHash: parsed.data.password ? await hashPassword(parsed.data.password) : undefined,
+    name: parsed.data.name,
     isActive: parsed.data.isActive,
   })
 

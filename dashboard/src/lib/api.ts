@@ -95,7 +95,7 @@ function jsonHeaders(idempotencyKey?: string) {
 }
 
 export function login(email: string, password: string) {
-  return apiFetch<{ user: { id: number; email: string; role: string } }>('/api/v1/auth/login', {
+  return apiFetch<{ user: { id: number; name: string; email: string; role: string } }>('/api/v1/auth/login', {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify({ email, password }),
@@ -270,6 +270,7 @@ export function getProfile() {
 }
 
 export function updateProfile(input: {
+  name?: string
   email?: string
   currentPassword?: string
   newPassword?: string
@@ -286,6 +287,7 @@ export function listUsers() {
 }
 
 export function createUser(input: {
+  name: string
   email: string
   password: string
   isActive: boolean
@@ -299,6 +301,7 @@ export function createUser(input: {
 
 export function updateUser(input: {
   userId: number
+  name?: string
   email?: string
   password?: string
   isActive?: boolean
@@ -307,6 +310,7 @@ export function updateUser(input: {
     method: 'PATCH',
     headers: jsonHeaders(),
     body: JSON.stringify({
+      name: input.name,
       email: input.email,
       password: input.password,
       isActive: input.isActive,

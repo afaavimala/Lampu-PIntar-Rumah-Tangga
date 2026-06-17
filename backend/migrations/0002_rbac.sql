@@ -1,14 +1,3 @@
-ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member';
-ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE users ADD COLUMN updated_at TEXT;
-
-ALTER TABLE user_devices ADD COLUMN device_permission TEXT NOT NULL DEFAULT 'monitoring';
-ALTER TABLE user_devices ADD COLUMN schedule_permission TEXT NOT NULL DEFAULT 'none';
-ALTER TABLE user_devices ADD COLUMN assigned_by_user_id INTEGER;
-ALTER TABLE user_devices ADD COLUMN updated_at TEXT;
-
-ALTER TABLE device_schedules ADD COLUMN created_by_user_id INTEGER;
-
 UPDATE users
 SET role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
     is_active = COALESCE(is_active, 1),

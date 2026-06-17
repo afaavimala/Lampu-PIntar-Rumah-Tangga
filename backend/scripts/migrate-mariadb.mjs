@@ -164,6 +164,7 @@ async function ensureIndex(conn, tableName, indexName, indexExpressionSql) {
 }
 
 async function ensureSchemaCompatibility(conn) {
+  await ensureColumn(conn, 'users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''")
   await ensureColumn(conn, 'users', 'role', "VARCHAR(32) NOT NULL DEFAULT 'member'")
   await ensureColumn(conn, 'users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1')
   await ensureColumn(conn, 'users', 'updated_at', 'VARCHAR(64) NULL')
@@ -186,13 +187,18 @@ async function ensureSchemaCompatibility(conn) {
   )
   await conn.query(
     `UPDATE users
-        SET role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
+        SET name = CASE
+              WHEN LOWER(email) = LOWER(COALESCE(?, 'admin@example.com')) THEN 'Administrator'
+              ELSE COALESCE(NULLIF(TRIM(name), ''), SUBSTRING_INDEX(email, '@', 1))
+            END,
+            role = COALESCE(NULLIF(TRIM(role), ''), 'member'),
             is_active = COALESCE(is_active, 1),
             updated_at = COALESCE(updated_at, created_at, ?)
-      WHERE role IS NULL OR TRIM(role) = ''
+      WHERE name IS NULL OR TRIM(name) = ''
+         OR role IS NULL OR TRIM(role) = ''
          OR is_active IS NULL
          OR updated_at IS NULL`,
-    [new Date().toISOString()],
+    [process.env.SEED_ADMIN_EMAIL?.trim() || 'admin@example.com', new Date().toISOString()],
   )
   await conn.query(
     `UPDATE user_devices
@@ -235,9 +241,10 @@ async function seedDefaults(conn) {
   const passwordHash = await bcrypt.hash(adminPassword, 12)
 
   await conn.query(
-    `INSERT INTO users (email, password_hash, role, is_active, created_at, updated_at)
-     VALUES (?, ?, 'admin', 1, ?, ?)
+    `INSERT INTO users (name, email, password_hash, role, is_active, created_at, updated_at)
+     VALUES ('Administrator', ?, ?, 'admin', 1, ?, ?)
      ON DUPLICATE KEY UPDATE
+       name = COALESCE(NULLIF(TRIM(name), ''), VALUES(name)),
        password_hash = VALUES(password_hash),
        role = 'admin',
        is_active = 1,

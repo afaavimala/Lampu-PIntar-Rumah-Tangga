@@ -93,11 +93,10 @@ scheduleRoutes.get('/', requireAuth(['read']), async (c) => {
       .prepare(
         `${scheduleSelectSql()}
          INNER JOIN user_devices ud ON ud.device_id = ds.device_id AND ud.user_id = ?
-         WHERE ds.user_id = ?
-           AND ud.schedule_permission IN ('monitoring', 'manage')
+         WHERE ud.schedule_permission IN ('monitoring', 'manage')
          ORDER BY ds.id DESC`,
       )
-      .bind(principal.userId, principal.userId)
+      .bind(principal.userId)
       .all<Record<string, unknown>>()
   } else {
     query = await c.env.DB
@@ -524,11 +523,10 @@ async function findScheduleById(
         `${scheduleSelectSql()}
          INNER JOIN user_devices ud ON ud.device_id = ds.device_id AND ud.user_id = ?
          WHERE ds.id = ?
-           AND ds.user_id = ?
            AND ${permissionPredicate}
          LIMIT 1`,
       )
-      .bind(principal.userId, scheduleId, principal.userId)
+      .bind(principal.userId, scheduleId)
       .first<Record<string, unknown>>()
   }
 

@@ -95,8 +95,7 @@ npm run start:production
 # flow deploy lokal (migrate + build + start)
 npm run deploy:local
 
-# deploy cloudflare (single worker)
-npm run migrate:remote
+# deploy cloudflare (single worker; deploy otomatis migrate remote kecuali dimatikan)
 npm run deploy:worker
 
 # verifikasi tambahan (opsional)
@@ -105,9 +104,10 @@ VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/measure-status-ack-latency.sh
 ```
 
 Catatan migrasi SQL:
-- File migrasi dikonsolidasi menjadi baseline tunggal per engine.
-- D1: `backend/migrations/0001_schema.sql`
-- MariaDB: `backend/migrations-mariadb/0001_schema.sql`
+- File `0001_schema.sql` adalah baseline untuk DB baru.
+- File setelah `0001` berisi upgrade/backfill untuk DB yang sudah ada.
+- D1: `backend/migrations/*.sql`
+- MariaDB: `backend/migrations-mariadb/*.sql`
 
 ## Setup Development Lokal
 
@@ -207,52 +207,75 @@ Catatan:
 
 ## Deploy Cloudflare Worker (Single URL)
 
-1. Pastikan sudah login Wrangler (`npx wrangler login`) dan `backend/wrangler.toml` tersedia.
-- `backend/wrangler.toml.example` hanya template contoh, tidak dipakai langsung untuk deploy.
+Bagian ini dibuat untuk alur paling aman: semua nilai cloud dibaca dari root `.env`, lalu script project membuat config Wrangler sementara. Dengan cara ini, deploy tidak salah memakai `database_id` lama yang masih tertulis di `backend/wrangler.toml`.
+
+1. Login Wrangler.
+```bash
+npx wrangler login
+```
+
+2. Pastikan `backend/wrangler.toml` tersedia.
+- `backend/wrangler.toml.example` hanya template awal.
 - Jika belum ada, buat dari template:
 ```bash
 cp backend/wrangler.toml.example backend/wrangler.toml
 ```
-- Target default: Worker `lampupintar` di `https://lampupintar.afaavimala.workers.dev`.
-- Pastikan binding D1/Assets/Cron valid. D1 production saat ini: `smartlamp_db` (`71be5235-fd72-4fb3-a646-b6a07e92b1d5`).
-2. Siapkan root env.
+
+3. Siapkan root env.
 ```bash
 cp .env.example .env
 # edit .env untuk cloud
 ```
-3. Pastikan nilai cloud penting:
-- `CF_D1_DATABASE_NAME` (dan `CF_WORKER_ENV` jika pakai environment wrangler)
-- `CF_D1_DATABASE_ID=71be5235-fd72-4fb3-a646-b6a07e92b1d5` untuk D1 existing `smartlamp_db`
-- `CF_WORKER_SYNC_SECRETS=true` jika ingin sinkron secret otomatis
-- `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin
-- Opsional override parameter struktur `backend/wrangler.toml` dari root `.env`:
-  - `CF_WORKER_NAME`, `CF_WORKER_COMPATIBILITY_DATE`
-  - `CF_ASSETS_DIRECTORY`, `CF_ASSETS_BINDING`
-  - `CF_D1_DATABASE_BINDING`, `CF_D1_DATABASE_NAME`, `CF_D1_DATABASE_ID`
-  - `CF_WORKER_CRONS` (format CSV, contoh: `* * * * *,0 7 * * *`)
-4. Generate env production turunan.
+
+4. Isi nilai cloud penting di `.env`.
+- `CF_WORKER_NAME`: nama Worker production.
+- `CF_D1_DATABASE_NAME`: nama D1, misalnya `smartlamp_db`.
+- `CF_D1_DATABASE_ID`: ID D1 dari Cloudflare Dashboard untuk database yang benar.
+- `CF_D1_DATABASE_BINDING=DB`.
+- `CF_WORKER_SYNC_SECRETS=true` agar secret ikut disinkronkan saat deploy.
+- `CF_WORKER_AUTO_MIGRATE=true` agar `npm run deploy:worker` otomatis menjalankan `npm run migrate:remote`.
+- `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin.
+- `CF_WORKER_CRONS` format CSV, contoh: `* * * * *,0 7 * * *`.
+
+5. Generate env production turunan.
 ```bash
 npm run env:production
 ```
-5. Jalankan migrasi D1 remote.
+
+6. Uji migrasi remote. Aman dijalankan ulang.
 ```bash
-npx wrangler d1 migrations list smartlamp_db --remote -c backend/wrangler.toml
 npm run migrate:remote
 ```
-6. Deploy Worker.
+
+7. Dry-run deploy. Mode ini build dan validasi deploy, tetapi tidak memigrasi DB dan tidak publish Worker.
 ```bash
 CF_WORKER_DRY_RUN=true npm run deploy:worker
+```
+
+8. Deploy production. Secara default ini menjalankan migrate remote dulu, lalu deploy Worker.
+```bash
 npm run deploy:worker
 ```
 
 Catatan deploy cloud:
 - Script deploy otomatis build frontend (`dashboard/dist`) lalu upload assets + API ke Worker yang sama.
 - Script deploy otomatis sync vars/secrets dari root `.env` saat `CF_WORKER_SYNC_SECRETS=true` memakai `wrangler deploy --secrets-file`, sehingga code + secret masuk dalam satu deployment.
+- Script deploy otomatis menjalankan `npm run migrate:remote` sebelum publish jika `CF_WORKER_AUTO_MIGRATE=true`.
+- Untuk mematikan auto-migrate sekali jalan:
+```bash
+CF_WORKER_AUTO_MIGRATE=false npm run deploy:worker
+```
 - Override sekali jalan jika perlu:
 ```bash
 FRONTEND_VITE_API_BASE_URL= npm run deploy:worker
 ```
 - Gunakan `CF_WORKER_DRY_RUN=true` untuk validasi perintah deploy tanpa publish.
+
+### Troubleshooting Cloudflare D1
+
+- Error `database ... could not be found`: biasanya command memakai `database_id` yang salah. Jangan jalankan `npx wrangler ... -c backend/wrangler.toml` langsung jika root `.env` punya override `CF_D1_DATABASE_ID`. Pakai `npm run migrate:remote` atau `npm run deploy:worker`.
+- Error `duplicate column name`: migration lama pernah mencoba menambah kolom yang sudah ada. Script `npm run migrate:remote` sekarang menjalankan preflight schema dan migration RBAC sudah dibuat backfill-only.
+- Jika ingin melihat DB target yang dipakai script, cek `.env`: `CF_D1_DATABASE_NAME`, `CF_D1_DATABASE_ID`, dan `CF_WORKER_ENV`.
 
 ## Environment Files
 
@@ -289,6 +312,7 @@ Semua nilai seed bisa diubah via env `SEED_*` di backend env file. Akun `SEED_AD
 Role user:
 - `admin`: akun dari `SEED_ADMIN_EMAIL`; dapat membuka Dashboard, User Manager, Device Manager, Schedule Manager, dan Profile.
 - `member`: dibuat dari User Manager; hanya membuka Dashboard dan Profile.
+- Semua akun punya `name`, `email`, password, status aktif/nonaktif, dan role.
 
 Permission member per device:
 - `monitoring`: read-only untuk status/realtime dan metadata yang diizinkan.
@@ -300,7 +324,10 @@ Permission jadwal per device:
 - `monitoring`: melihat jadwal dan run history.
 - `manage`: membuat, mengubah, pause/resume, dan menghapus jadwal.
 
-Aturan penting: `schedule_permission='manage'` hanya valid jika `device_permission` minimal `control`. User Manager mencegah kombinasi invalid ini, dan backend tetap menolak mutasi jadwal bila device masih `monitoring`.
+Aturan penting:
+- Akses schedule bersifat per device. Jika member punya izin schedule pada sebuah device, daftar schedule device itu akan muncul walaupun schedule awalnya dibuat oleh admin atau user lain.
+- `schedule_permission='none'` membuat seluruh bagian schedule untuk device tersebut tidak tampil di dashboard member.
+- `schedule_permission='manage'` hanya valid jika `device_permission` minimal `control`. User Manager mencegah kombinasi invalid ini, dan backend tetap menolak mutasi jadwal bila device masih `monitoring`.
 
 ## API v1
 
@@ -322,7 +349,7 @@ Schedules:
 - `PATCH /api/v1/schedules/{scheduleId}`
 - `DELETE /api/v1/schedules/{scheduleId}`
 - `GET /api/v1/schedules/{scheduleId}/runs`
-- Catatan dashboard: input jadwal memakai format waktu `HH:mm`, lalu dikonversi ke cron harian internal (`m h * * *`).
+- Catatan dashboard: input jadwal memakai format waktu `HH:mm:ss`; backend tetap mengeksekusi pada resolusi menit.
 - Admin dapat mengirim `targetUserId` saat membuat jadwal untuk member yang sudah punya schedule `manage` dan device `control/manage`.
 
 Users/Profile:

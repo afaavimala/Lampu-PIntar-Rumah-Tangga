@@ -39,9 +39,11 @@ export function UserManager() {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [assignments, setAssignments] = useState<AssignmentDraft[]>([])
+  const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editActive, setEditActive] = useState(true)
+  const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newActive, setNewActive] = useState(true)
@@ -83,6 +85,7 @@ export function UserManager() {
     try {
       const result = await getUserAssignments(userId)
       setAssignments(result.assignments)
+      setEditName(result.user.name)
       setEditEmail(result.user.email)
       setEditPassword('')
       setEditActive(result.user.isActive)
@@ -101,6 +104,7 @@ export function UserManager() {
   useEffect(() => {
     if (selectedUserId == null) {
       setAssignments([])
+      setEditName('')
       setEditEmail('')
       setEditPassword('')
       return
@@ -115,10 +119,12 @@ export function UserManager() {
     setError(null)
     try {
       const created = await createUser({
+        name: newName.trim(),
         email: newEmail.trim(),
         password: newPassword,
         isActive: newActive,
       })
+      setNewName('')
       setNewEmail('')
       setNewPassword('')
       setNewActive(true)
@@ -141,6 +147,7 @@ export function UserManager() {
     try {
       const updated = await updateUser({
         userId: selectedUser.id,
+        name: editName.trim(),
         email: editEmail.trim(),
         password: editPassword || undefined,
         isActive: editActive,
@@ -228,6 +235,18 @@ export function UserManager() {
         <form className="panel-form" onSubmit={(event) => void handleCreateMember(event)}>
           <h3>Create Member</h3>
           <label>
+            Nama
+            <input
+              type="text"
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              minLength={1}
+              maxLength={255}
+              required
+              disabled={saving}
+            />
+          </label>
+          <label>
             Email
             <input
               type="email"
@@ -258,7 +277,7 @@ export function UserManager() {
             />
             Aktif
           </label>
-          <button type="submit" disabled={saving || newPassword.length < 8 || !newEmail.trim()}>
+          <button type="submit" disabled={saving || newPassword.length < 8 || !newName.trim() || !newEmail.trim()}>
             {saving ? 'Memproses...' : 'Buat Member'}
           </button>
         </form>
@@ -272,6 +291,7 @@ export function UserManager() {
               <thead>
                 <tr>
                   <th>Email</th>
+                  <th>Nama</th>
                   <th>Status</th>
                   <th>Aksi</th>
                 </tr>
@@ -280,6 +300,7 @@ export function UserManager() {
                 {members.map((user) => (
                   <tr key={user.id} className={user.id === selectedUserId ? 'selected' : ''}>
                     <td>{user.email}</td>
+                    <td>{user.name}</td>
                     <td>{user.isActive ? 'Aktif' : 'Nonaktif'}</td>
                     <td>
                       <button
@@ -303,6 +324,18 @@ export function UserManager() {
         <div className="assignment-area">
           <form className="panel-form member-edit-form" onSubmit={(event) => void handleSaveUser(event)}>
             <h3>Edit Member</h3>
+            <label>
+              Nama
+              <input
+                type="text"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                minLength={1}
+                maxLength={255}
+                required
+                disabled={saving}
+              />
+            </label>
             <label>
               Email
               <input
@@ -334,7 +367,10 @@ export function UserManager() {
               />
               Aktif
             </label>
-            <button type="submit" disabled={saving || !editEmail.trim() || (editPassword.length > 0 && editPassword.length < 8)}>
+            <button
+              type="submit"
+              disabled={saving || !editName.trim() || !editEmail.trim() || (editPassword.length > 0 && editPassword.length < 8)}
+            >
               {saving ? 'Menyimpan...' : 'Simpan User'}
             </button>
           </form>
@@ -343,7 +379,7 @@ export function UserManager() {
             <div className="assignment-head">
               <div>
                 <h3>Assignment Device & Jadwal</h3>
-                <p className="small">{selectedUser.email}</p>
+                <p className="small">{selectedUser.name} - {selectedUser.email}</p>
               </div>
               <button
                 type="button"

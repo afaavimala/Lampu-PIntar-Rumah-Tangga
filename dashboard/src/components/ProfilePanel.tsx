@@ -12,6 +12,7 @@ function toErrorMessage(error: unknown, fallback: string) {
 
 export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
   const [profile, setProfile] = useState<UserSummary | null>(null)
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -31,6 +32,7 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
         const nextProfile = await getProfile()
         if (!mounted) return
         setProfile(nextProfile)
+        setName(nextProfile.name)
         setEmail(nextProfile.email)
       } catch (err) {
         if (mounted) {
@@ -48,14 +50,15 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
     }
   }, [])
 
-  async function handleSaveEmail(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage(null)
     setError(null)
     setSavingProfile(true)
     try {
-      const updated = await updateProfile({ email: email.trim() })
+      const updated = await updateProfile({ name: name.trim(), email: email.trim() })
       setProfile(updated)
+      setName(updated.name)
       setEmail(updated.email)
       setMessage('Profil tersimpan.')
       onProfileUpdated?.(updated)
@@ -91,7 +94,7 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
   if (loading) {
     return (
       <section className="panel-shell profile-panel">
-        <h2>Profile</h2>
+        <h2>Account</h2>
         <p className="small">Memuat profil...</p>
       </section>
     )
@@ -101,8 +104,8 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
     <section className="panel-shell profile-panel">
       <div className="panel-head">
         <div>
-          <h2>Profile</h2>
-          <p className="small">Kelola email dan password akun.</p>
+          <h2>Account</h2>
+          <p className="small">Kelola nama, email, dan password akun.</p>
         </div>
         {profile ? <span className="role-badge">{profile.role}</span> : null}
       </div>
@@ -115,6 +118,10 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
           <article className="profile-card">
             <h3>Identitas Akun</h3>
             <dl className="profile-facts">
+              <div>
+                <dt>Nama</dt>
+                <dd>{profile.name}</dd>
+              </div>
               <div>
                 <dt>Email</dt>
                 <dd>{profile.email}</dd>
@@ -130,8 +137,20 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
             </dl>
           </article>
 
-          <form className="panel-form" onSubmit={(event) => void handleSaveEmail(event)}>
-            <h3>Edit Email</h3>
+          <form className="panel-form" onSubmit={(event) => void handleSaveProfile(event)}>
+            <h3>Edit Profil</h3>
+            <label>
+              Nama
+              <input
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                minLength={1}
+                maxLength={255}
+                required
+                disabled={savingProfile}
+              />
+            </label>
             <label>
               Email
               <input
@@ -142,8 +161,8 @@ export function ProfilePanel({ onProfileUpdated }: ProfilePanelProps) {
                 disabled={savingProfile}
               />
             </label>
-            <button type="submit" disabled={savingProfile || !email.trim()}>
-              {savingProfile ? 'Menyimpan...' : 'Simpan Email'}
+            <button type="submit" disabled={savingProfile || !name.trim() || !email.trim()}>
+              {savingProfile ? 'Menyimpan...' : 'Simpan Profil'}
             </button>
           </form>
 

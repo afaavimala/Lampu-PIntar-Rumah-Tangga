@@ -80,6 +80,7 @@ describe('device discovery integrations', () => {
       if (mode === 'first' && sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
         return {
           id: 1,
+          name: 'Admin User',
           email: 'user@example.com',
           password_hash: 'unused',
           role: 'admin',

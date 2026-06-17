@@ -2,6 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member',
@@ -150,8 +151,9 @@ CREATE INDEX IF NOT EXISTS idx_command_logs_device ON command_logs (device_id, i
 -- Default admin credentials for local MVP:
 -- email: admin@example.com
 -- password: admin12345
-INSERT OR IGNORE INTO users (email, password_hash, role, is_active, created_at, updated_at)
+INSERT OR IGNORE INTO users (name, email, password_hash, role, is_active, created_at, updated_at)
 VALUES (
+  'Administrator',
   'admin@example.com',
   '$2b$12$pE5REBOZ19Ad.9CSB13J1O/n7nID3CKOq5dWd.XLOVlAHFLHEKTX.',
   'admin',
@@ -161,7 +163,10 @@ VALUES (
 );
 
 UPDATE users
-SET role = 'admin', is_active = 1, updated_at = datetime('now')
+SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
+    role = 'admin',
+    is_active = 1,
+    updated_at = datetime('now')
 WHERE email = 'admin@example.com';
 
 INSERT OR IGNORE INTO devices (device_id, mqtt_device_id, name, location, command_channel, hmac_secret, created_at)

@@ -108,13 +108,14 @@ openApiRoutes.get('/openapi.json', (c) => {
           type: 'object',
           properties: {
             id: { type: 'integer' },
+            name: { type: 'string' },
             email: { type: 'string', format: 'email' },
             role: { $ref: '#/components/schemas/UserRole' },
             isActive: { type: 'boolean' },
             createdAt: { type: 'string' },
             updatedAt: { type: ['string', 'null'] },
           },
-          required: ['id', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
+          required: ['id', 'name', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
         },
         UserSummaryEnvelope: {
           allOf: [
@@ -131,6 +132,7 @@ openApiRoutes.get('/openapi.json', (c) => {
         ProfilePatch: {
           type: 'object',
           properties: {
+            name: { type: 'string', minLength: 1, maxLength: 255 },
             email: { type: 'string', format: 'email' },
             currentPassword: { type: 'string', minLength: 8, maxLength: 128 },
             newPassword: { type: 'string', minLength: 8, maxLength: 128 },
@@ -139,15 +141,17 @@ openApiRoutes.get('/openapi.json', (c) => {
         CreateUserRequest: {
           type: 'object',
           properties: {
+            name: { type: 'string', minLength: 1, maxLength: 255 },
             email: { type: 'string', format: 'email' },
             password: { type: 'string', minLength: 8, maxLength: 128 },
             isActive: { type: 'boolean', default: true },
           },
-          required: ['email', 'password'],
+          required: ['name', 'email', 'password'],
         },
         PatchUserRequest: {
           type: 'object',
           properties: {
+            name: { type: 'string', minLength: 1, maxLength: 255 },
             email: { type: 'string', format: 'email' },
             password: { type: 'string', minLength: 8, maxLength: 128 },
             isActive: { type: 'boolean' },

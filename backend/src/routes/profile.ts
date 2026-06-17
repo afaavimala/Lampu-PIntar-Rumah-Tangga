@@ -9,11 +9,12 @@ import { requireUserAuth } from '../middleware/auth'
 
 const updateProfileSchema = z
   .object({
+    name: z.string().trim().min(1).max(255).optional(),
     email: z.email().optional(),
     currentPassword: z.string().min(8).max(128).optional(),
     newPassword: z.string().min(8).max(128).optional(),
   })
-  .refine((value) => value.email !== undefined || value.newPassword !== undefined, {
+  .refine((value) => value.name !== undefined || value.email !== undefined || value.newPassword !== undefined, {
     message: 'At least one editable field is required',
   })
   .refine((value) => value.newPassword === undefined || value.currentPassword !== undefined, {
@@ -25,6 +26,7 @@ export const profileRoutes = new Hono<AppEnv>()
 function toProfileDto(user: {
   id: number
   email: string
+  name: string
   role: string
   is_active: number
   created_at: string
@@ -32,6 +34,7 @@ function toProfileDto(user: {
 }) {
   return {
     id: Number(user.id),
+    name: user.name,
     email: user.email,
     role: user.role,
     isActive: Number(user.is_active) === 1,
@@ -86,6 +89,7 @@ profileRoutes.patch('/profile', requireUserAuth(), async (c) => {
   }
 
   await updateUserProfile(c.env.DB, principal.userId, {
+    name: parsed.data.name,
     email: parsed.data.email,
     passwordHash,
   })
