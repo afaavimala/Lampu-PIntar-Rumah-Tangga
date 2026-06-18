@@ -1,5 +1,5 @@
 import { computeNextRunAt } from './schedules'
-import { createCommandEnvelope, logCommandDispatch } from './commands'
+import { createCommandEnvelope, logCommandDispatch, type CommandDispatchEnvelope } from './commands'
 import type { EnvBindings } from '../types/app'
 import { publishCommandPersistent } from './mqtt-command-dispatch'
 import { ensureDeviceCommandChannelCompatibility } from './db'
@@ -21,30 +21,42 @@ type DueScheduleRow = {
   enforce_every_minute: number | null
 }
 
-function toLocalMinuteOfDay(epochMs: number, timezone: string): number | null {
+type RunDueSchedulesOptions = {
+  now?: number
+  publishCommand?: (envelope: CommandDispatchEnvelope) => Promise<void>
+}
+
+function toLocalSecondOfDay(epochMs: number, timezone: string): number | null {
   try {
     const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: timezone,
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
     }).formatToParts(new Date(epochMs))
     const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '')
     const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '')
-    if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    const second = Number(parts.find((part) => part.type === 'second')?.value ?? '')
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second)) {
       return null
     }
-    return hour * 60 + minute
+    return (hour % 24) * 3600 + minute * 60 + second
   } catch {
     return null
   }
 }
 
-function isWithinWindow(localMinute: number, startMinute: number, endMinute: number) {
-  if (startMinute <= endMinute) {
-    return localMinute >= startMinute && localMinute <= endMinute
+function isWithinWindow(localSecond: number, startSecond: number, endSecond: number) {
+  if (startSecond === endSecond) {
+    return false
   }
-  return localMinute >= startMinute || localMinute <= endMinute
+
+  if (startSecond < endSecond) {
+    return localSecond >= startSecond && localSecond < endSecond
+  }
+
+  return localSecond >= startSecond || localSecond < endSecond
 }
 
 function shouldExecuteForWindow(row: DueScheduleRow, plannedAt: number) {
@@ -56,28 +68,45 @@ function shouldExecuteForWindow(row: DueScheduleRow, plannedAt: number) {
     return true
   }
 
-  const localMinute = toLocalMinuteOfDay(plannedAt, row.timezone)
-  if (localMinute == null) {
+  const localSecond = toLocalSecondOfDay(plannedAt, row.timezone)
+  if (localSecond == null) {
     return true
   }
 
-  const startMinute = Math.max(0, Math.min(1439, Number(row.window_start_minute)))
-  const endMinute = Math.max(0, Math.min(1439, Number(row.window_end_minute)))
-  const interval = Math.max(1, Math.min(1440, Number(row.enforce_every_minute)))
+  const startSecond = Math.max(0, Math.min(86_399, Number(row.window_start_minute)))
+  const endSecond = Math.max(0, Math.min(86_399, Number(row.window_end_minute)))
+  const interval = Math.max(1, Math.min(86_400, Number(row.enforce_every_minute)))
 
-  if (!isWithinWindow(localMinute, startMinute, endMinute)) {
+  if (!isWithinWindow(localSecond, startSecond, endSecond)) {
     return false
   }
 
   const elapsedSinceStart =
-    localMinute >= startMinute ? localMinute - startMinute : 1440 - startMinute + localMinute
+    localSecond >= startSecond ? localSecond - startSecond : 86_400 - startSecond + localSecond
   return elapsedSinceStart % interval === 0
 }
 
-export async function runDueSchedules(env: EnvBindings) {
+function hasWindowConfig(row: DueScheduleRow) {
+  return (
+    row.window_start_minute != null &&
+    row.window_end_minute != null &&
+    row.enforce_every_minute != null
+  )
+}
+
+function normalizeCronForSchedule(row: DueScheduleRow) {
+  const segments = row.cron_expr.trim().split(/\s+/)
+  if (hasWindowConfig(row) && segments.length === 5) {
+    return `* ${segments.join(' ')}`
+  }
+  return row.cron_expr
+}
+
+export async function runDueSchedules(env: EnvBindings, options: RunDueSchedulesOptions = {}) {
   await ensureDeviceCommandChannelCompatibility(env.DB)
 
-  const now = Date.now()
+  const now = options.now ?? Date.now()
+  const publishCommand = options.publishCommand ?? ((envelope: CommandDispatchEnvelope) => publishCommandPersistent(env, envelope))
   const dueRows = await env.DB
     .prepare(
       `SELECT ds.id AS schedule_id,
@@ -117,7 +146,7 @@ export async function runDueSchedules(env: EnvBindings) {
 
   for (let i = 0; i < rows.length; i += concurrency) {
     const chunk = rows.slice(i, i + concurrency)
-    const chunkResults = await Promise.all(chunk.map((row) => handleOneSchedule(env, row)))
+    const chunkResults = await Promise.all(chunk.map((row) => handleOneSchedule(env, row, publishCommand)))
     for (const result of chunkResults) {
       if (result === 'failed') {
         failed += 1
@@ -130,7 +159,11 @@ export async function runDueSchedules(env: EnvBindings) {
   return { processed, failed }
 }
 
-async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise<'processed' | 'failed' | 'skipped'> {
+async function handleOneSchedule(
+  env: EnvBindings,
+  row: DueScheduleRow,
+  publishCommand: (envelope: CommandDispatchEnvelope) => Promise<void>,
+): Promise<'processed' | 'failed' | 'skipped'> {
   const plannedAt = row.next_run_at
 
   if (!shouldExecuteForWindow(row, plannedAt)) {
@@ -165,7 +198,7 @@ async function handleOneSchedule(env: EnvBindings, row: DueScheduleRow): Promise
       commandChannel: row.command_channel,
     })
 
-    await publishCommandPersistent(env, envelope)
+    await publishCommand(envelope)
 
     await env.DB
       .prepare(
@@ -213,7 +246,7 @@ async function advanceScheduleCursor(
   setLastRunAt: boolean,
 ) {
   const nextRunAt = computeNextRunAt({
-    cron: row.cron_expr,
+    cron: normalizeCronForSchedule(row),
     timezone: row.timezone,
     fromDate: new Date(plannedAt + 1000),
   })

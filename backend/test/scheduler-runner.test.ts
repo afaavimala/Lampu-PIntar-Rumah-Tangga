@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppDatabase, DbAllResult, DbPreparedStatement, DbRunResult } from '../src/types/db'
 import { runDueSchedules } from '../src/lib/scheduler-runner'
 import { publishMqttOverWs } from '../src/lib/mqtt-ws'
@@ -28,6 +28,10 @@ type DueScheduleRow = {
   cron_expr: string
   timezone: string
   next_run_at: number
+  window_group_id?: string | null
+  window_start_minute?: number | null
+  window_end_minute?: number | null
+  enforce_every_minute?: number | null
 }
 
 class SchedulerDbMock implements AppDatabase {
@@ -94,6 +98,10 @@ class SchedulerDbMock implements AppDatabase {
 }
 
 describe('scheduler runner dedup', () => {
+  beforeEach(() => {
+    vi.mocked(publishMqttOverWs).mockClear()
+  })
+
   it('avoids double publish for the same schedule slot', async () => {
     const now = Date.now()
     const db = new SchedulerDbMock([
@@ -136,5 +144,131 @@ describe('scheduler runner dedup', () => {
     expect(second).toEqual({ processed: 0, failed: 0 })
     expect(publishCallsAfterFirst).toBeGreaterThan(0)
     expect(publishMock).toHaveBeenCalledTimes(publishCallsAfterFirst)
+  })
+
+  it('treats window end as exclusive so adjacent on/off schedules do not overlap', async () => {
+    const plannedAt = Date.UTC(2026, 0, 1, 16, 0, 0)
+    const db = new SchedulerDbMock([
+      {
+        schedule_id: 201,
+        user_id: 1,
+        device_internal_id: 11,
+        device_id: 'lampu-boundary',
+        mqtt_device_id: 'lampu-boundary',
+        command_channel: 'POWER',
+        action: 'ON',
+        cron_expr: '* * * * *',
+        timezone: 'Asia/Jakarta',
+        next_run_at: plannedAt,
+        window_group_id: 'on-window',
+        window_start_minute: 18 * 3600,
+        window_end_minute: 23 * 3600,
+        enforce_every_minute: 60,
+      },
+      {
+        schedule_id: 202,
+        user_id: 1,
+        device_internal_id: 11,
+        device_id: 'lampu-boundary',
+        mqtt_device_id: 'lampu-boundary',
+        command_channel: 'POWER',
+        action: 'OFF',
+        cron_expr: '* * * * *',
+        timezone: 'Asia/Jakarta',
+        next_run_at: plannedAt,
+        window_group_id: 'off-window',
+        window_start_minute: 23 * 3600,
+        window_end_minute: 23 * 3600 + 30 * 60,
+        enforce_every_minute: 60,
+      },
+    ])
+
+    const result = await runDueSchedules({
+      DB: db as any,
+      MQTT_WS_URL: 'wss://broker.example/mqtt',
+      MQTT_USERNAME: 'u',
+      MQTT_PASSWORD: 'p',
+      MQTT_CLIENT_ID_PREFIX: 'test',
+      JWT_SECRET: 'jwt',
+    } as any)
+
+    expect(result).toEqual({ processed: 1, failed: 0 })
+    expect(publishMqttOverWs).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(publishMqttOverWs).mock.calls[0]?.[0]).toMatchObject({
+      topic: 'cmnd/lampu-boundary/POWER',
+      payload: 'OFF',
+    })
+  })
+
+  it('supports per-second enforcement intervals inside a window', async () => {
+    const plannedAt = Date.UTC(2026, 0, 1, 16, 0, 5)
+    const db = new SchedulerDbMock([
+      {
+        schedule_id: 301,
+        user_id: 1,
+        device_internal_id: 11,
+        device_id: 'lampu-seconds',
+        mqtt_device_id: 'lampu-seconds',
+        command_channel: 'POWER',
+        action: 'OFF',
+        cron_expr: '*/5 * * * * *',
+        timezone: 'Asia/Jakarta',
+        next_run_at: plannedAt,
+        window_group_id: 'seconds-window',
+        window_start_minute: 23 * 3600,
+        window_end_minute: 23 * 3600 + 60,
+        enforce_every_minute: 5,
+      },
+    ])
+
+    const result = await runDueSchedules({
+      DB: db as any,
+      MQTT_WS_URL: 'wss://broker.example/mqtt',
+      MQTT_USERNAME: 'u',
+      MQTT_PASSWORD: 'p',
+      MQTT_CLIENT_ID_PREFIX: 'test',
+      JWT_SECRET: 'jwt',
+    } as any)
+
+    expect(result).toEqual({ processed: 1, failed: 0 })
+    expect(publishMqttOverWs).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(publishMqttOverWs).mock.calls[0]?.[0]).toMatchObject({
+      topic: 'cmnd/lampu-seconds/POWER',
+      payload: 'OFF',
+    })
+  })
+
+  it('skips seconds that do not match the enforcement interval', async () => {
+    const plannedAt = Date.UTC(2026, 0, 1, 16, 0, 6)
+    const db = new SchedulerDbMock([
+      {
+        schedule_id: 302,
+        user_id: 1,
+        device_internal_id: 11,
+        device_id: 'lampu-seconds-skip',
+        mqtt_device_id: 'lampu-seconds-skip',
+        command_channel: 'POWER',
+        action: 'OFF',
+        cron_expr: '*/5 * * * * *',
+        timezone: 'Asia/Jakarta',
+        next_run_at: plannedAt,
+        window_group_id: 'seconds-window',
+        window_start_minute: 23 * 3600,
+        window_end_minute: 23 * 3600 + 60,
+        enforce_every_minute: 5,
+      },
+    ])
+
+    const result = await runDueSchedules({
+      DB: db as any,
+      MQTT_WS_URL: 'wss://broker.example/mqtt',
+      MQTT_USERNAME: 'u',
+      MQTT_PASSWORD: 'p',
+      MQTT_CLIENT_ID_PREFIX: 'test',
+      JWT_SECRET: 'jwt',
+    } as any)
+
+    expect(result).toEqual({ processed: 0, failed: 0 })
+    expect(publishMqttOverWs).not.toHaveBeenCalled()
   })
 })

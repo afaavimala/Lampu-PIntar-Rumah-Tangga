@@ -24,5 +24,5 @@ export function computeNextRunAt(input: {
 }
 
 export function normalizePlannedAt(now = Date.now()) {
-  return Math.floor(now / 60_000) * 60_000
+  return Math.floor(now / 1_000) * 1_000
 }

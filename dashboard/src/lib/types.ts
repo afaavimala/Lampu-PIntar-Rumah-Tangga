@@ -130,8 +130,11 @@ export type ScheduleRule = {
   startAt: number | null
   endAt: number | null
   windowGroupId: string | null
+  /** Backward-compatible API name; value is seconds since 00:00:00. */
   windowStartMinute: number | null
+  /** Backward-compatible API name; value is seconds since 00:00:00, with end exclusive. */
   windowEndMinute: number | null
+  /** Backward-compatible API name; value is interval seconds. */
   enforceEveryMinute: number | null
   createdAt: string
   updatedAt: string

@@ -261,8 +261,11 @@ export function createSchedule(input: {
   startAt?: string
   endAt?: string
   windowGroupId?: string
+  /** Backward-compatible API name; send seconds since 00:00:00. */
   windowStartMinute?: number
+  /** Backward-compatible API name; send seconds since 00:00:00, with end exclusive. */
   windowEndMinute?: number
+  /** Backward-compatible API name; send interval seconds. */
   enforceEveryMinute?: number
   idempotencyKey: string
 }) {

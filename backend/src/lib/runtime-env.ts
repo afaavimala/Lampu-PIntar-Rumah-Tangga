@@ -48,7 +48,7 @@ export function loadServerRuntimeConfig(env: NodeJS.ProcessEnv): ServerRuntimeCo
   const host = env.HOST?.trim() || '0.0.0.0'
   const port = readNumber(env, 'PORT', 8787)
   const schedulerEnabled = readBoolean(env, 'SCHEDULER_ENABLED', true)
-  const schedulerIntervalMs = readNumber(env, 'SCHEDULER_INTERVAL_MS', 60_000)
+  const schedulerIntervalMs = readNumber(env, 'SCHEDULER_INTERVAL_MS', 1_000)
   const serveDashboard = readBoolean(env, 'SERVE_DASHBOARD', false)
   const frontendDistDir = env.FRONTEND_DIST_DIR?.trim()
     ? resolve(env.FRONTEND_DIST_DIR)

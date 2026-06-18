@@ -2,6 +2,13 @@
 
 Frontend dashboard untuk kontrol device, monitoring status realtime, dan manajemen jadwal.
 
+## Jadwal Lampu
+
+- `Waktu Dari` dan `Waktu Sampai` memakai format `HH:mm`.
+- `Interval Eksekusi` memakai format `mm:ss`, misalnya `01:00` atau `00:05`.
+- Jadwal tetap berbasis window: start aktif, end tidak ikut aktif.
+- Timezone dipilih dari dropdown agar nilainya sesuai daftar timezone yang didukung browser/backend.
+
 ## Runtime Realtime
 
 - Dashboard tidak konek broker MQTT langsung.

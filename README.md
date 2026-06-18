@@ -1,348 +1,444 @@
 # Lampu Pintar Rumah Tangga
 
-MVP SmartLamp IoT berbasis `ESP32 + HiveMQ + Hono + Vite` dengan deployment fleksibel:
-- Lokal: Node.js + MariaDB.
-- Cloudflare: single Worker + D1 (API + frontend assets pada 1 URL).
+SmartHome IoT untuk mengelola lampu berbasis MQTT/Tasmota melalui dashboard web. Aplikasi ini bisa jalan lokal dengan MariaDB, atau deploy sebagai satu Cloudflare Worker yang berisi API, dashboard, scheduler, dan binding Cloudflare D1.
 
-Stack saat ini:
-- Backend: `Hono` (Node runtime untuk lokal, Worker runtime untuk Cloudflare).
-- Frontend: `Vite + React + TypeScript`.
-- Database: `MariaDB` (lokal) / `Cloudflare D1` (cloud).
-- Realtime: MQTT proxy di backend, frontend consume SSE (`/api/v1/realtime/stream`).
-- Scheduler: interval in-process (lokal) / Cron Trigger Worker (cloud).
+## Ringkasan
 
-Catatan runtime realtime:
-- Node lokal: SSE disuplai dari subscriber MQTT backend (event status/lwt broker).
-- Cloudflare Worker: command publish lewat Durable Object MQTT gateway (koneksi persisten broker), SSE tetap disuplai dari MQTT subscribe per stream + snapshot LWT retained.
+- Dashboard React untuk kontrol lampu, status realtime, jadwal, User Manager, dan Account/Profile.
+- Backend Hono yang bisa berjalan di Node.js lokal dan Cloudflare Workers.
+- Database lokal memakai MariaDB; deployment cloud memakai Cloudflare D1.
+- MQTT memakai format Tasmota: command `cmnd/{deviceId}/POWER`, status `stat/*` dan `tele/*`.
+- Scheduler lokal bisa berjalan tiap detik; scheduler cloud dipantik Cloudflare Cron Trigger lalu dilanjutkan Durable Object alarm tiap detik.
+- RBAC: admin dari seed env, member dibuat admin dan diberi permission per device/jadwal.
 
-## Arsitektur Ringkas
+## Arsitektur
 
 ```text
-ESP32 -- MQTT TLS --> HiveMQ Broker <-- MQTT WSS --> Node.js + Hono API
-                                                     |      ^
-                                                     |      |
-                                    Dashboard (browser) -- SSE (/api/v1/realtime/stream)
-                          |
-                          v
-                       MariaDB
+Browser Dashboard
+  | HTTP/SSE
+  v
+Hono API + Scheduler
+  |                 \
+  | SQL              \ MQTT WSS
+  v                   v
+MariaDB / D1       HiveMQ / Broker MQTT
+                      ^
+                      |
+                  Tasmota / ESP32
 ```
 
-Mode production lokal (single port):
-- Frontend dibuild ke `dashboard/dist`.
-- Backend Node melayani API + file frontend di port yang sama (`PORT` dari `BACKEND_PORT`, default `8787`).
+Mode lokal development:
+- Backend: `http://127.0.0.1:8787`
+- Dashboard Vite: `http://127.0.0.1:5173`
+- Database: MariaDB
 
-Mode cloudflare:
-- Backend + frontend deploy ke Worker yang sama (`backend/src/index.ts` + assets dari `dashboard/dist`).
+Mode Cloudflare:
+- Satu URL Worker untuk dashboard + API.
+- Assets dashboard diupload dari `dashboard/dist`.
+- D1 binding bernama `DB`.
+- Durable Object `MQTT_GATEWAY` dipakai untuk publish MQTT persisten.
+- Cron trigger default membangunkan scheduler cloud tiap menit, lalu Durable Object alarm melanjutkan tick tiap detik selama Worker aktif.
 
 ## Struktur Repo
 
 ```text
-backend/    # Hono API (Node + Worker), migrasi MariaDB & D1
-dashboard/  # Vite React dashboard + realtime SSE client
-scripts/    # script setup/build/deploy lokal + cloud
-firmware/   # referensi firmware ESP32 SmartLamp / Tasmota (MQTT + LWT)
-docs/       # diagram arsitektur, dokumentasi utama, hasil verifikasi
+backend/      Hono API, Worker entrypoint, migrasi D1/MariaDB, test backend
+dashboard/    Vite + React dashboard
+scripts/      script setup, migrasi, build, deploy lokal/cloud
+firmware/     catatan firmware/perangkat
+docs/         dokumentasi tambahan dan diagram
 ```
 
-## Dokumentasi
+## Requirements
 
-- `docs/Dokumentasi_Utama_SmartLamp_IoT.md`
-- `docs/Diagram_Arsitektur_Ekosistem_SmartLamp.md`
-- `docs/PLAYWRIGHT_VERIFICATION.md`
-- `docs/diagram/README.md`
+Wajib untuk semua mode:
+- Node.js 20 atau lebih baru.
+- npm 10 atau lebih baru.
+- Git.
 
-## Prasyarat
+Untuk development lokal:
+- MariaDB aktif dan bisa diakses dari mesin ini.
+- Database MariaDB kosong atau siap dimigrasi.
 
-- Node.js 20+
-- npm
-- MariaDB server aktif
+Untuk Cloudflare Worker:
+- Akun Cloudflare dengan akses Workers dan D1.
+- Wrangler login: `npx wrangler login`.
+- Token Wrangler harus punya akses `workers` dan `d1`.
+- Broker MQTT yang mendukung WebSocket TLS, misalnya HiveMQ Cloud.
+
+Versi yang sudah diverifikasi di workspace ini:
+- Node.js `v24.13.1`
+- npm `11.13.0`
+- Wrangler `4.101.0`
+
+## Install Awal
+
+```bash
+npm run install:all
+cp .env.example .env
+```
+
+Edit `.env` sebelum menjalankan aplikasi. Jangan commit `.env` karena berisi secret.
+
+Minimal yang perlu diisi:
+
+```dotenv
+BACKEND_JWT_SECRET=secret-panjang-dan-acak
+BACKEND_MQTT_WS_URL=wss://broker.example:8884/mqtt
+BACKEND_MQTT_USERNAME=username-mqtt
+BACKEND_MQTT_PASSWORD=password-mqtt
+BACKEND_SEED_ADMIN_EMAIL=admin@example.com
+BACKEND_SEED_ADMIN_PASSWORD=password-admin-awal
+```
+
+Untuk lokal MariaDB, isi juga:
+
+```dotenv
+BACKEND_DB_HOST=127.0.0.1
+BACKEND_DB_PORT=3306
+BACKEND_DB_USER=root
+BACKEND_DB_PASSWORD=
+BACKEND_DB_NAME=smartlamp_local
+```
 
 ## Root Commands
 
 ```bash
-# install backend + dashboard
-npm run install:all
+npm run install:all        # install dependency root, backend, dashboard
+npm run env:local          # generate backend/dashboard env lokal dari root .env
+npm run env:production     # generate env production lokal/worker dari root .env
+npm run migrate:local      # migrasi MariaDB lokal
+npm run migrate:production # migrasi MariaDB production lokal
+npm run migrate:remote     # migrasi Cloudflare D1 remote
+npm run setup:local        # env lokal + migrasi lokal
+npm run setup:production   # env production + migrasi production MariaDB
+npm run dev                # backend + dashboard development
+npm run build              # typecheck backend + test backend + build dashboard
+npm run deploy:local       # production lokal single-port
+npm run deploy:worker      # build + auto-migrate D1 + deploy Cloudflare Worker
+```
 
-# siapkan env untuk development / production (wajib sudah ada root .env)
-npm run env:local
-npm run env:production
+## Development Lokal
 
-# migrasi database MariaDB
-npm run migrate:local
-npm run migrate:production
+Alur cepat:
 
-# migrasi database D1 cloud
-npm run migrate:remote
-
-# setup cepat
+```bash
+cp .env.example .env
+# edit .env
 npm run setup:local
-npm run setup:production
-
-# development mode (backend :BACKEND_PORT default 8787 + dashboard :5173)
 npm run dev
+```
+
+URL:
+- Dashboard: `http://127.0.0.1:5173`
+- API: `http://127.0.0.1:8787`
+
+Alur manual:
+
+```bash
+npm run env:local
+npm run migrate:local
 npm run dev:backend
 npm run dev:dashboard
-
-# validasi/build
-npm run typecheck
-npm run test
-npm run build
-
-# production single port
-# (otomatis sync root .env -> backend/.env.production)
-npm run start:production
-
-# flow deploy lokal (migrate + build + start)
-npm run deploy:local
-
-# deploy cloudflare (single worker; deploy otomatis migrate remote kecuali dimatikan)
-npm run deploy:worker
-
-# verifikasi tambahan (opsional)
-VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/verify-parallel-devices.sh
-VERIFY_BASE_URL=http://127.0.0.1:8787 ./scripts/measure-status-ack-latency.sh
 ```
 
-Catatan migrasi SQL:
-- File `0001_schema.sql` adalah baseline untuk DB baru.
-- File setelah `0001` berisi upgrade/backfill untuk DB yang sudah ada.
-- D1: `backend/migrations/*.sql`
-- MariaDB: `backend/migrations-mariadb/*.sql`
+## Production Lokal Single Port
 
-## Setup Development Lokal
+Gunakan mode ini jika ingin menjalankan API dan dashboard dari satu server Node.js tanpa Cloudflare.
 
-### Opsi cepat
+Set `.env`:
 
-```bash
-cp .env.example .env
-# edit .env sesuai environment lokal
-npm run setup:local
-
+```dotenv
+BACKEND_SERVE_DASHBOARD=true
+BACKEND_HOST=0.0.0.0
+BACKEND_PORT=8787
+FRONTEND_VITE_API_BASE_URL=
 ```
 
-### Opsi manual
-
-1. Install dependency.
-```bash
-npm run install:all
-```
-2. Buat root env.
-```bash
-cp .env.example .env
-```
-3. Isi `.env` minimal:
-- `BACKEND_DB_HOST`, `BACKEND_DB_PORT`, `BACKEND_DB_USER`, `BACKEND_DB_PASSWORD`, `BACKEND_DB_NAME`
-- `BACKEND_JWT_SECRET`
-- `BACKEND_MQTT_WS_URL`, `BACKEND_MQTT_USERNAME`, `BACKEND_MQTT_PASSWORD`
-4. Generate env lokal turunan.
-```bash
-npm run env:local
-```
-5. Jalankan migrasi MariaDB lokal.
-```bash
-npm run migrate:local
-```
-6. Jalankan aplikasi.
-```bash
-npm run dev
-```
-
-URL default development:
-- Dashboard: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:8787`
-
-Catatan:
-- `npm run dev` otomatis sinkronkan `.env` -> `backend/.env.local` dan `dashboard/.env.local` sebelum start.
-- Untuk run terpisah: `npm run dev:backend` dan `npm run dev:dashboard`.
-
-## Deploy Production Lokal (Single Port)
-
-### Opsi cepat (sekali jalan)
+Jalankan:
 
 ```bash
-cp .env.example .env
-# edit .env untuk mode production lokal
 npm run deploy:local
 ```
 
-`deploy:local` akan menjalankan: `env:production` -> `migrate:production` -> `build` -> `start:production`.
-
-### Opsi manual
-
-1. Siapkan dependency + root env.
-```bash
-npm run install:all
-cp .env.example .env
-```
-2. Set nilai penting di `.env`:
-- `BACKEND_SERVE_DASHBOARD=true`
-- `BACKEND_HOST=0.0.0.0` agar bisa diakses dari device lain dalam jaringan
-- `BACKEND_PORT` (misal `8080`)
-- seluruh `BACKEND_DB_*` untuk DB production
-- `BACKEND_SEED_ADMIN_PASSWORD` wajib diganti
-- `BACKEND_CORS_ORIGINS=*` jika frontend/API diakses dari origin beragam
-- `FRONTEND_VITE_API_BASE_URL=` tetap kosong untuk mode same-origin single port
-3. Generate env production.
-```bash
-npm run env:production
-```
-4. Migrasi DB production.
-```bash
-npm run migrate:production
-```
-5. Build + jalankan.
-```bash
-npm run build
-npm run start:production
-```
+`deploy:local` melakukan:
+1. `npm run env:production`
+2. `npm run migrate:production`
+3. `npm run build`
+4. `npm run start:production`
 
 Verifikasi:
-- App lokal mesin server: `http://127.0.0.1:<BACKEND_PORT>`
-- App dari device lain: `http://<IP-LAN-SERVER>:<BACKEND_PORT>`
-- Health (kanonik): `GET /api/health`
-- Health (alias kompatibilitas probe): `GET /health`
+- `http://127.0.0.1:8787`
+- `http://127.0.0.1:8787/api/health`
+- dari perangkat lain: `http://<IP-LAN-SERVER>:8787`
 
-Catatan:
-- `npm run start:production` akan selalu menjalankan `env:production` dulu agar konfigurasi turunan tetap sinkron dengan root `.env`.
+## Deploy Cloudflare Worker
 
-## Deploy Cloudflare Worker (Single URL)
+Deployment Cloudflare membaca root `.env` sebagai source of truth. Script akan membuat config Wrangler sementara dari `backend/wrangler.toml`, lalu override nilai Worker/D1 dari `.env`. Ini sengaja dibuat agar tidak salah memakai `database_id` lama yang mungkin masih ada di file template.
 
-Bagian ini dibuat untuk alur paling aman: semua nilai cloud dibaca dari root `.env`, lalu script project membuat config Wrangler sementara. Dengan cara ini, deploy tidak salah memakai `database_id` lama yang masih tertulis di `backend/wrangler.toml`.
+### 1. Login dan cek akun
 
-1. Login Wrangler.
 ```bash
 npx wrangler login
+npx wrangler whoami
 ```
 
-2. Pastikan `backend/wrangler.toml` tersedia.
-- `backend/wrangler.toml.example` hanya template awal.
-- Jika belum ada, buat dari template:
+### 2. Siapkan D1
+
+Jika sudah punya D1:
+
 ```bash
-cp backend/wrangler.toml.example backend/wrangler.toml
+npx wrangler d1 list
 ```
 
-3. Siapkan root env.
+Lalu isi `.env`:
+
+```dotenv
+CF_D1_DATABASE_NAME=nama_database
+CF_D1_DATABASE_ID=uuid-database
+CF_D1_DATABASE_BINDING=DB
+```
+
+Jika ingin mulai dari database fresh, buat D1 baru:
+
 ```bash
-cp .env.example .env
-# edit .env untuk cloud
+npx wrangler d1 create smartlamp_db_fresh
 ```
 
-4. Isi nilai cloud penting di `.env`.
-- `CF_WORKER_NAME`: nama Worker production.
-- `CF_D1_DATABASE_NAME`: nama D1, misalnya `smartlamp_db`.
-- `CF_D1_DATABASE_ID`: ID D1 dari Cloudflare Dashboard untuk database yang benar.
-- `CF_D1_DATABASE_BINDING=DB`.
-- `CF_WORKER_SYNC_SECRETS=true` agar secret ikut disinkronkan saat deploy.
-- `CF_WORKER_AUTO_MIGRATE=true` agar `npm run deploy:worker` otomatis menjalankan `npm run migrate:remote`.
-- `FRONTEND_VITE_API_BASE_URL=` kosong untuk deployment single Worker same-origin.
-- `CF_WORKER_CRONS` format CSV, contoh: `* * * * *,0 7 * * *`.
+Salin `database_name` dan `database_id` hasil command itu ke `.env`. Jangan menghapus database lama sebelum database baru terverifikasi jalan.
 
-5. Generate env production turunan.
+### 3. Isi opsi Worker
+
+Contoh `.env` cloud:
+
+```dotenv
+CF_WORKER_NAME=lampu-pintar
+CF_WORKER_ENV=
+CF_D1_DATABASE_NAME=smartlamp_db_fresh
+CF_D1_DATABASE_ID=uuid-d1-baru
+CF_D1_DATABASE_BINDING=DB
+CF_WORKER_KEEP_VARS=true
+CF_WORKER_SYNC_SECRETS=true
+CF_WORKER_AUTO_MIGRATE=true
+CF_WORKER_DRY_RUN=false
+CF_WORKER_CRONS=* * * * *
+FRONTEND_VITE_API_BASE_URL=
+```
+
+Catatan:
+- `FRONTEND_VITE_API_BASE_URL=` dikosongkan untuk same-origin Worker.
+- `CF_WORKER_AUTO_MIGRATE=true` membuat `npm run deploy:worker` otomatis menjalankan `npm run migrate:remote`.
+- `CF_WORKER_DRY_RUN=true` tidak memigrasi DB dan tidak publish Worker.
+- `CF_WORKER_KEEP_VARS=true` menjaga var yang sudah ada di dashboard Cloudflare.
+- Secret seperti `JWT_SECRET`, `MQTT_WS_URL`, `MQTT_USERNAME`, `MQTT_PASSWORD`, dan `SEED_ADMIN_PASSWORD` dikirim sebagai Worker secret saat `CF_WORKER_SYNC_SECRETS=true`.
+
+### 4. Generate env production
+
 ```bash
 npm run env:production
 ```
 
-6. Uji migrasi remote. Aman dijalankan ulang.
+### 5. Migrasi D1 remote
+
 ```bash
 npm run migrate:remote
 ```
 
-7. Dry-run deploy. Mode ini build dan validasi deploy, tetapi tidak memigrasi DB dan tidak publish Worker.
+Script ini aman dijalankan ulang. Untuk database fresh, `0001_schema.sql` membuat baseline schema, lalu migration berikutnya melakukan backfill/compatibility.
+
+### 6. Dry run
+
 ```bash
 CF_WORKER_DRY_RUN=true npm run deploy:worker
 ```
 
-8. Deploy production. Secara default ini menjalankan migrate remote dulu, lalu deploy Worker.
+Dry run melakukan typecheck/build dan validasi deploy, tetapi skip migrasi D1 dan tidak publish Worker.
+
+### 7. Deploy production
+
 ```bash
 npm run deploy:worker
 ```
 
-Catatan deploy cloud:
-- Script deploy otomatis build frontend (`dashboard/dist`) lalu upload assets + API ke Worker yang sama.
-- Script deploy otomatis sync vars/secrets dari root `.env` saat `CF_WORKER_SYNC_SECRETS=true` memakai `wrangler deploy --secrets-file`, sehingga code + secret masuk dalam satu deployment.
-- Script deploy otomatis menjalankan `npm run migrate:remote` sebelum publish jika `CF_WORKER_AUTO_MIGRATE=true`.
-- Untuk mematikan auto-migrate sekali jalan:
-```bash
-CF_WORKER_AUTO_MIGRATE=false npm run deploy:worker
-```
-- Override sekali jalan jika perlu:
-```bash
-FRONTEND_VITE_API_BASE_URL= npm run deploy:worker
-```
-- Gunakan `CF_WORKER_DRY_RUN=true` untuk validasi perintah deploy tanpa publish.
+`deploy:worker` melakukan:
+1. Load root `.env`.
+2. Backend typecheck.
+3. Build dashboard.
+4. `npm run migrate:remote` jika `CF_WORKER_AUTO_MIGRATE=true`.
+5. Sync Worker vars/secrets.
+6. `wrangler deploy`.
 
-### Troubleshooting Cloudflare D1
+## Membuat Database Cloud Fresh dengan Aman
 
-- Error `database ... could not be found`: biasanya command memakai `database_id` yang salah. Jangan jalankan `npx wrangler ... -c backend/wrangler.toml` langsung jika root `.env` punya override `CF_D1_DATABASE_ID`. Pakai `npm run migrate:remote` atau `npm run deploy:worker`.
-- Error `duplicate column name`: migration lama pernah mencoba menambah kolom yang sudah ada. Script `npm run migrate:remote` sekarang menjalankan preflight schema dan migration RBAC sudah dibuat backfill-only.
-- Jika ingin melihat DB target yang dipakai script, cek `.env`: `CF_D1_DATABASE_NAME`, `CF_D1_DATABASE_ID`, dan `CF_WORKER_ENV`.
+Gunakan checklist ini saat ingin deploy ulang dari nol tanpa menyentuh DB lama:
+
+1. Catat DB lama:
+```bash
+npx wrangler d1 list
+```
+
+2. Buat DB baru dengan nama unik:
+```bash
+npx wrangler d1 create smartlamp_db_fresh_YYYYMMDD
+```
+
+3. Update `.env`:
+```dotenv
+CF_D1_DATABASE_NAME=smartlamp_db_fresh_YYYYMMDD
+CF_D1_DATABASE_ID=uuid-d1-baru
+```
+
+4. Migrasi DB baru:
+```bash
+npm run migrate:remote
+```
+
+5. Pastikan tabel ada:
+```bash
+npx wrangler d1 execute "$CF_D1_DATABASE_NAME" --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+```
+
+6. Deploy Worker:
+```bash
+npm run deploy:worker
+```
+
+7. Verifikasi URL Worker:
+- login admin seed berhasil.
+- menu admin muncul: Dashboard, User Manager, Account.
+- sample device seed muncul.
+- schedule dapat dibuat.
+- console browser tidak ada error.
+
+8. Setelah yakin, database lama boleh disimpan sebagai backup. Penghapusan DB lama tidak dilakukan otomatis oleh project.
 
 ## Environment Files
 
-- Root override tunggal (source of truth): `.env` (buat dari `.env.example`)
-- `npm run env:local` dan `npm run env:production` sekarang akan gagal jika root `.env` belum ada.
-- Generated lokal:
-  - `backend/.env.local`
-  - `dashboard/.env.local`
-  - `backend/.dev.vars.local`
-- Generated production:
-  - `backend/.env.production`
-  - `dashboard/.env.production`
-  - `backend/.worker.production.env`
-- Template:
-  - `backend/.env.local.example`
-  - `backend/.env.production.example`
-  - `backend/.dev.vars.local.example`
-  - `backend/.worker.production.env.example`
-  - `dashboard/.env.example`
-  - `dashboard/.env.production.example`
+Root `.env` adalah sumber utama. Script akan membuat file turunan sesuai mode.
 
-## Seed Default
+File root:
+- `.env.example`: template aman dicommit.
+- `.env`: nilai nyata, jangan dicommit.
 
-Migrasi MariaDB akan memastikan seed default:
-- Admin email (default): `admin@example.com`
-- Admin password awal: isi `BACKEND_SEED_ADMIN_PASSWORD` / `SEED_ADMIN_PASSWORD` dengan secret kuat di env nyata.
-- Sample device (default): `lampu-ruang-tamu`
-- Demo API key (default): `demo-integration-key`
+Generated lokal:
+- `backend/.env.local`
+- `dashboard/.env.local`
+- `backend/.dev.vars.local`
 
-Semua nilai seed bisa diubah via env `SEED_*` di backend env file. Akun `SEED_ADMIN_EMAIL` selalu dipromosikan dan diaktifkan sebagai `admin`. Hash seed legacy bawaan akan di-upgrade ke password env, tetapi password yang sudah diedit dari Profile tidak ditimpa lagi saat login.
+Generated production:
+- `backend/.env.production`
+- `dashboard/.env.production`
+- `backend/.worker.production.env`
 
-## Login dan Rate Limit
+Template turunan:
+- `backend/.env.local.example`
+- `backend/.env.production.example`
+- `backend/.dev.vars.local.example`
+- `backend/.worker.production.env.example`
+- `dashboard/.env.example`
+- `dashboard/.env.production.example`
 
-Login memakai pembatas percobaan gagal berbasis IP agar password tidak bisa ditebak terus-menerus:
-- `BACKEND_AUTH_LOGIN_RATE_LIMIT_MAX`: jumlah gagal yang masih diberi respons normal.
-- `BACKEND_AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC`: jendela hitung percobaan gagal.
-- `BACKEND_AUTH_LOGIN_BACKOFF_BASE_SEC`: tunggu awal setelah melewati batas.
-- `BACKEND_AUTH_LOGIN_BACKOFF_FACTOR`: pengali exponential backoff.
-- `BACKEND_AUTH_LOGIN_BACKOFF_MAX_SEC`: batas tunggu maksimum.
+## Seed Admin dan Login Awal
 
-Contoh: jika max `5`, base `30`, factor `2`, maka percobaan setelah melewati batas akan mendapat waktu tunggu yang bisa naik dari 30 detik, 60 detik, 120 detik, dan seterusnya sampai nilai maksimum. Dashboard menampilkan countdown realtime sampai 0 dan tidak menampilkan `requestId` teknis ke user.
+Seed admin berasal dari:
 
-## RBAC
+```dotenv
+BACKEND_SEED_ADMIN_EMAIL=admin@example.com
+BACKEND_SEED_ADMIN_PASSWORD=password-admin-awal
+```
 
-Role user:
-- `admin`: akun dari `SEED_ADMIN_EMAIL`; dapat membuka Dashboard, User Manager, Device Manager, Schedule Manager, dan Profile.
-- `member`: dibuat dari User Manager; hanya membuka Dashboard dan Profile.
-- Semua akun punya `name`, `email`, password, status aktif/nonaktif, dan role.
-- User Manager memakai archive/restore, bukan hard delete. User archived tetap ada di database untuk menjaga riwayat log, schedule, dan assignment, tetapi tidak bisa login sampai direstore.
+Aturan:
+- Akun dengan email `BACKEND_SEED_ADMIN_EMAIL` dipastikan aktif sebagai `admin`.
+- Password seed dipakai saat admin belum ada atau masih memakai hash seed lama.
+- Jika password sudah diubah dari Account/Profile, login tidak terus-menerus menimpa password tersebut.
+- Admin dapat membuat member, mengatur permission, archive/restore member, dan reset password member.
 
-Permission member per device:
-- `monitoring`: read-only untuk status/realtime dan metadata yang diizinkan.
-- `control`: semua akses monitoring plus command ON/OFF.
-- `manage`: control plus edit metadata device yang sudah di-assign.
+## RBAC dan Permission
+
+Role:
+- `admin`: akses Dashboard, User Manager, Device Manager, Schedule Manager, Account.
+- `member`: akses Dashboard dan Account.
+
+Permission device per member:
+- `monitoring`: hanya lihat status/realtime.
+- `control`: monitoring plus command ON/OFF.
+- `manage`: full akses pada device yang di-assign, termasuk metadata.
 
 Permission jadwal per device:
-- `none`: tidak melihat jadwal device tersebut.
-- `monitoring`: melihat jadwal dan run history.
-- `manage`: membuat, mengubah, pause/resume, dan menghapus jadwal.
+- `none`: section/list jadwal untuk device itu tidak tampil di dashboard member.
+- `monitoring`: melihat daftar jadwal dan riwayat run, read-only.
+- `manage`: membuat/edit/pause/delete jadwal, tetapi hanya valid jika device permission minimal `control`.
 
-Aturan penting:
-- Akses schedule bersifat per device. Jika member punya izin schedule pada sebuah device, daftar schedule device itu akan muncul walaupun schedule awalnya dibuat oleh admin atau user lain.
-- `schedule_permission='none'` membuat seluruh bagian schedule untuk device tersebut tidak tampil di dashboard member.
-- `schedule_permission='manage'` hanya valid jika `device_permission` minimal `control`. User Manager mencegah kombinasi invalid ini, dan backend tetap menolak mutasi jadwal bila device masih `monitoring`.
-- Pada dashboard, form jadwal default memakai `Interval Eksekusi (menit) = 1`. Waktu diisi sebagai `HH:mm:ss`, tetapi scheduler tetap berjalan pada resolusi menit.
+Catatan:
+- Admin bypass permission operasional.
+- Assignment jadwal bersifat per device, bukan per pembuat jadwal.
+- User archived tidak bisa login, tetapi data historis tetap aman.
 
-## API v1
+## Jadwal Lampu
+
+Dashboard membuat jadwal berbasis window:
+- `Waktu Dari`: awal window, format `HH:mm`.
+- `Waktu Sampai`: akhir window, format `HH:mm`.
+- `Kondisi Saat Rentang Aktif`: `ON` atau `OFF`.
+- `Interval Eksekusi (mm:ss)`: default `01:00`, bisa sampai resolusi detik seperti `00:05`.
+- Timezone dipilih dari dropdown.
+
+Format window sengaja hanya `HH:mm` agar jadwal tetap mudah dibaca sebagai rentang waktu. Resolusi detik diatur lewat interval `mm:ss`.
+
+Boundary jadwal memakai model `[start, end)`:
+- Start ikut aktif.
+- End tidak ikut aktif.
+
+Contoh:
+- `ON 18:00 - 23:00` aktif mulai `18:00:00` sampai sebelum `23:00:00`.
+- `OFF 23:00 - 23:30` aktif mulai `23:00:00` sampai sebelum `23:30:00`.
+- Tepat pada `23:00:00`, yang aktif hanya jadwal `OFF`.
+- Jika interval `00:05`, command dievaluasi pada detik ke-0, ke-5, ke-10, dan seterusnya selama masih di dalam window.
+
+Ini mencegah dua jadwal bersebelahan mengirim command berlawanan pada detik batas yang sama.
+
+Catatan kompatibilitas API:
+- Field lama `windowStartMinute`, `windowEndMinute`, dan `enforceEveryMinute` tetap dipakai agar dashboard/API lama tidak patah.
+- Nilai field tersebut sekarang berbasis detik: `windowStartMinute/windowEndMinute` adalah detik sejak `00:00:00`, sedangkan `enforceEveryMinute` adalah interval detik.
+
+## Login Rate Limit
+
+Login gagal dibatasi per IP dan memakai exponential backoff.
+
+Env:
+
+```dotenv
+BACKEND_AUTH_LOGIN_RATE_LIMIT_MAX=8
+BACKEND_AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC=60
+BACKEND_AUTH_LOGIN_BACKOFF_BASE_SEC=30
+BACKEND_AUTH_LOGIN_BACKOFF_FACTOR=2
+BACKEND_AUTH_LOGIN_BACKOFF_MAX_SEC=900
+```
+
+Dashboard menampilkan pesan ramah user dan countdown realtime sampai tombol login aktif lagi. `requestId` teknis tidak ditampilkan ke user.
+
+## MQTT Contract
+
+Command:
+
+```text
+cmnd/{deviceId}/POWER = ON
+cmnd/{deviceId}/POWER = OFF
+```
+
+Status yang diterima:
+
+```text
+stat/{deviceId}/POWER
+stat/{deviceId}/RESULT
+tele/{deviceId}/STATE
+tele/{deviceId}/LWT
+{deviceId}/tele/LWT
+```
+
+Untuk multi-channel Tasmota, backend bisa memakai `POWER1`, `POWER2`, dan seterusnya melalui `command_channel`.
+
+## API Ringkas
 
 Auth:
 - `POST /api/v1/auth/login`
@@ -350,83 +446,139 @@ Auth:
 - `POST /api/v1/auth/logout`
 
 Core:
+- `GET /api/health`
 - `GET /api/v1/bootstrap`
-- `POST /api/v1/commands/execute` (utama, dipakai dashboard)
-- `GET /api/v1/realtime/stream` (SSE)
 - `GET /api/v1/status`
+- `POST /api/v1/commands/execute`
+- `GET /api/v1/realtime/stream`
 
 Schedules:
-- `POST /api/v1/schedules`
 - `GET /api/v1/schedules`
+- `POST /api/v1/schedules`
 - `GET /api/v1/schedules/{scheduleId}`
 - `PATCH /api/v1/schedules/{scheduleId}`
 - `DELETE /api/v1/schedules/{scheduleId}`
 - `GET /api/v1/schedules/{scheduleId}/runs`
-- Catatan dashboard: input jadwal memakai format waktu `HH:mm:ss`; backend tetap mengeksekusi pada resolusi menit.
-- Admin dapat mengirim `targetUserId` saat membuat jadwal untuk member yang sudah punya schedule `manage` dan device `control/manage`.
 
 Users/Profile:
 - `GET /api/v1/profile`
 - `PATCH /api/v1/profile`
-- `GET /api/v1/users` (admin)
-- `GET /api/v1/users?includeArchived=1` (admin, tampilkan user archived)
-- `POST /api/v1/users` (admin, membuat `member`)
-- `PATCH /api/v1/users/{userId}` (admin)
-- `DELETE /api/v1/users/{userId}` (admin, archive/soft delete member)
-- `POST /api/v1/users/{userId}/restore` (admin, restore member archived)
-- `GET /api/v1/users/{userId}/assignments` (admin)
-- `PUT /api/v1/users/{userId}/assignments` (admin)
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- `PATCH /api/v1/users/{userId}`
+- `DELETE /api/v1/users/{userId}`
+- `POST /api/v1/users/{userId}/restore`
+- `GET /api/v1/users/{userId}/assignments`
+- `PUT /api/v1/users/{userId}/assignments`
 
-Open integration:
-- `GET /api/v1/integrations/capabilities`
-- `POST /api/v1/devices` (tambah device dan assign ke user login)
+Devices/Integrations:
 - `GET /api/v1/devices`
-- `GET /api/v1/devices/discovery` (scan auto-discovery device Tasmota via MQTT)
+- `POST /api/v1/devices`
+- `GET /api/v1/devices/discovery`
 - `GET /api/v1/devices/{deviceId}`
 - `GET /api/v1/devices/{deviceId}/status`
+- `GET /api/v1/integrations/capabilities`
 - `GET /api/v1/openapi.json`
 
-## MQTT Contract (Tasmota Only)
-
-Topic standar Tasmota:
-- Command: `cmnd/{deviceId}/POWER` (kanonik)
-- Status: `stat/{deviceId}/POWER`, `stat/{deviceId}/RESULT`, `tele/{deviceId}/STATE`
-- LWT: `tele/{deviceId}/LWT` atau `{deviceId}/tele/LWT`
-
-Payload command (backend -> device):
-- `ON` atau `OFF` (plain text).
-
-Catatan:
-- Backend tidak lagi memakai profile native `home/{deviceId}/*`.
-- Parser realtime backend hanya menerima event Tasmota (`stat/*`, `tele/*`).
-
-Source of truth implementasi:
-- `backend/src/routes/commands.ts`
-- `backend/src/lib/scheduler-runner.ts`
-- `backend/src/lib/mqtt-command-dispatch.ts`
-- `backend/src/durable/mqtt-gateway-object.ts`
-- `backend/src/lib/mqtt-ws.ts`
-- `backend/src/lib/crypto.ts`
-- `backend/src/lib/realtime-mqtt-proxy.ts`
-
-## Testing
+## Testing dan Verifikasi
 
 Backend:
 
 ```bash
-cd backend
-npm run typecheck
-npm run test
+npm --prefix backend run typecheck
+npm --prefix backend run test
 ```
 
-Frontend:
+Dashboard:
 
 ```bash
-cd dashboard
-npm run build
+npm --prefix dashboard run build
 ```
 
-## Catatan Operasional
+Semua:
 
-- Endpoint `POST /api/v1/commands/execute` bergantung pada kredensial MQTT backend yang valid.
-- Jika broker menolak autentikasi (mis. `MQTT CONNACK code 5`), API akan merespons `502`.
+```bash
+npm run build
+git diff --check
+```
+
+Smoke test cloud setelah deploy:
+
+```bash
+curl -fsS https://<worker-url>/api/health
+curl -fsS https://<worker-url>/api/v1/openapi.json
+```
+
+UI QA minimal:
+- Login admin seed.
+- Pastikan menu `Dashboard`, `User Manager`, dan `Account` muncul.
+- Buat member dengan nama/email/password.
+- Assign device permission dan schedule permission.
+- Login member dan pastikan menu admin tidak muncul.
+- Cek schedule permission:
+  - `none`: jadwal tidak tampil.
+  - `monitoring`: jadwal tampil read-only.
+  - `manage` + device `control/manage`: jadwal bisa dibuat/diedit.
+- Pastikan browser console tidak ada error.
+
+## Troubleshooting
+
+### `database ... could not be found`
+
+Penyebab paling sering: command Wrangler memakai `database_id` lama dari `backend/wrangler.toml`, sedangkan project memakai override `.env`.
+
+Solusi:
+- Pakai `npm run migrate:remote` dan `npm run deploy:worker`.
+- Jangan menjalankan `npx wrangler ... -c backend/wrangler.toml` langsung jika `.env` punya `CF_D1_DATABASE_ID`.
+- Cek target:
+```bash
+npx wrangler d1 list
+```
+
+### `duplicate column name`
+
+Biasanya terjadi pada DB yang pernah dimigrasi sebagian. `npm run migrate:remote` punya preflight untuk menambah kolom yang hilang dan migration RBAC dibuat backfill-only. Jalankan migrasi lewat script project, bukan command mentah.
+
+### Login admin gagal setelah fresh deploy
+
+Cek:
+- `BACKEND_SEED_ADMIN_EMAIL`
+- `BACKEND_SEED_ADMIN_PASSWORD`
+- Worker secret sudah tersinkron saat deploy.
+
+Deploy ulang:
+
+```bash
+npm run deploy:worker
+```
+
+### Dashboard blank atau API beda origin
+
+Untuk Cloudflare single Worker, pastikan:
+
+```dotenv
+FRONTEND_VITE_API_BASE_URL=
+```
+
+Jika diisi URL lain, dashboard akan call API ke origin tersebut.
+
+### MQTT command gagal `502`
+
+Biasanya broker menolak koneksi atau credential salah.
+
+Cek:
+- `BACKEND_MQTT_WS_URL`
+- `BACKEND_MQTT_USERNAME`
+- `BACKEND_MQTT_PASSWORD`
+- device Tasmota online dan memakai topic yang sama dengan `deviceId` / `mqtt_device_id`.
+
+### Cron tidak langsung terasa setelah deploy
+
+Cloudflare Cron Trigger bisa butuh waktu propagasi setelah deploy. Scheduler detik memakai Durable Object alarm setelah cron pertama membangunkan Worker; jika Worker sedang idle, tunggu sampai cron berikutnya atau jalankan command manual dari dashboard untuk test cepat.
+
+## Referensi
+
+- Cloudflare Wrangler configuration: https://developers.cloudflare.com/workers/wrangler/configuration/
+- Cloudflare Wrangler D1 commands: https://developers.cloudflare.com/workers/wrangler/commands/d1/
+- Cloudflare D1 migrations: https://developers.cloudflare.com/d1/reference/migrations/
+- Cloudflare Worker secrets: https://developers.cloudflare.com/workers/configuration/secrets/

@@ -1,10 +1,16 @@
 import { RealtimeMqttProxy } from '../lib/realtime-mqtt-proxy'
 import { createCommandEnvelope } from '../lib/commands'
+import { runDueSchedules } from '../lib/scheduler-runner'
 import type { CommandAction, EnvBindings } from '../types/app'
 
 type DurableObjectStateLike = {
   blockConcurrencyWhile?: <T>(callback: () => Promise<T>) => Promise<T>
+  storage?: {
+    setAlarm?: (scheduledTime: number | Date) => Promise<void>
+  }
 }
+
+const SCHEDULER_TICK_MS = 1_000
 
 function asAction(value: unknown): CommandAction | null {
   if (typeof value !== 'string') {
@@ -45,6 +51,7 @@ function parsePublishRequestBody(input: unknown) {
 export class MqttGatewayDurableObject {
   private proxy: RealtimeMqttProxy | null = null
   private readonly startup: Promise<void>
+  private schedulerLocked = false
 
   constructor(private readonly state: DurableObjectStateLike, private readonly env: EnvBindings) {
     const initialize = async () => {
@@ -63,6 +70,15 @@ export class MqttGatewayDurableObject {
     if (request.method === 'GET' && url.pathname === '/health') {
       return Response.json({
         ok: true,
+      })
+    }
+
+    if (request.method === 'POST' && url.pathname === '/scheduler/tick') {
+      const result = await this.runSchedulerTick()
+      await this.scheduleNextSchedulerAlarm()
+      return Response.json({
+        success: true,
+        data: result,
       })
     }
 
@@ -144,5 +160,35 @@ export class MqttGatewayDurableObject {
     proxy.start()
     this.proxy = proxy
     return proxy
+  }
+
+  async alarm() {
+    await this.startup
+    try {
+      await this.runSchedulerTick()
+    } finally {
+      await this.scheduleNextSchedulerAlarm()
+    }
+  }
+
+  private async runSchedulerTick() {
+    if (this.schedulerLocked) {
+      return { processed: 0, failed: 0, skipped: true }
+    }
+
+    this.schedulerLocked = true
+    try {
+      return await runDueSchedules(this.env, {
+        publishCommand: async (envelope) => {
+          await this.ensureProxy().publishCommand(envelope)
+        },
+      })
+    } finally {
+      this.schedulerLocked = false
+    }
+  }
+
+  private async scheduleNextSchedulerAlarm() {
+    await this.state.storage?.setAlarm?.(Date.now() + SCHEDULER_TICK_MS)
   }
 }

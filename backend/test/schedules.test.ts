@@ -13,6 +13,17 @@ describe('schedule next run', () => {
     expect(nextRun).toBeGreaterThan(now.getTime())
   })
 
+  it('supports six-field cron expressions for second-level schedules', () => {
+    const now = new Date('2026-02-16T10:00:00.000Z')
+    const nextRun = computeNextRunAt({
+      cron: '*/5 * * * * *',
+      timezone: 'Asia/Jakarta',
+      fromDate: now,
+    })
+
+    expect(nextRun - now.getTime()).toBe(5_000)
+  })
+
   it('throws for invalid timezone', () => {
     expect(() =>
       computeNextRunAt({

@@ -714,11 +714,14 @@ export default function App() {
     timezone: string
     enforcementCron: string
     activeAction: 'ON' | 'OFF'
-    windowGroupId: string
-    windowStartMinute: number
-    windowEndMinute: number
-    enforceEveryMinute: number
-  }) {
+  windowGroupId: string
+  /** Backward-compatible API name; value is seconds since 00:00:00. */
+  windowStartMinute: number
+  /** Backward-compatible API name; value is seconds since 00:00:00, with end exclusive. */
+  windowEndMinute: number
+  /** Backward-compatible API name; value is interval seconds. */
+  enforceEveryMinute: number
+}) {
     setGlobalError(null)
     setScheduleBusy(true)
     try {

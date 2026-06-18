@@ -30,9 +30,18 @@ Jika `SERVE_DASHBOARD=true`, backend akan melayani build frontend dari folder `.
 Backend juga menjalankan proxy realtime MQTT -> SSE (`/api/v1/realtime/stream`) agar frontend tidak membutuhkan kredensial broker.
 Publish command MQTT menggunakan koneksi broker persistent (single connection per process/isolate), sehingga tidak ada handshake WebSocket ulang per command.
 Pada runtime Worker (Cloudflare), command publish dijalankan lewat Durable Object `MqttGatewayDurableObject` untuk menjaga koneksi broker tetap persisten lintas request.
+Pada runtime Worker (Cloudflare), scheduler dipantik Cron Trigger lalu Durable Object alarm melakukan tick tiap detik agar interval jadwal `mm:ss` bisa berjalan tanpa menunggu menit berikutnya.
 Pada runtime Worker (Cloudflare), endpoint SSE membuka subscribe MQTT langsung per koneksi stream.
 Pada deploy Worker, frontend (`dashboard/dist`) ikut di-serve sebagai static assets pada URL Worker yang sama.
 Jika kredensial MQTT backend tidak valid, endpoint command execute akan gagal publish dan merespons `502`.
+
+## Scheduler
+
+- Lokal Node.js memakai `SCHEDULER_INTERVAL_MS`; default template sekarang `1000` ms.
+- Cloudflare Cron Trigger tetap memakai ekspresi menit (`* * * * *`) sebagai pemantik.
+- Setelah dipantik, Durable Object `MQTT_GATEWAY` menjadwalkan alarm per detik untuk memproses jadwal berinterval detik.
+- Window jadwal tetap berbasis rentang `HH:mm`; interval enforcement memakai format UI `mm:ss`.
+- Nama kolom/field lama `window_start_minute`, `window_end_minute`, dan `enforce_every_minute` dipertahankan untuk kompatibilitas, tetapi nilai runtime-nya sekarang detik.
 
 Kompatibilitas MQTT:
 - Sistem hanya mendukung profile Tasmota.

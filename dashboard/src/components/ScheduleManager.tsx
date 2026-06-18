@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Device, ScheduleRule, ScheduleRun } from '../lib/types'
 
 type WeekdayKey = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN'
@@ -52,7 +52,7 @@ type ScheduleWindow = {
   action: 'ON' | 'OFF'
   fromTime: string
   untilTime: string
-  intervalMinutes: number
+  intervalSeconds: number
   nextRunAt: number | null
   rules: ScheduleRule[]
   groupId: string | null
@@ -71,7 +71,8 @@ const WEEKDAYS: Array<{ key: WeekdayKey; short: string; cron: number }> = [
 
 const ALL_DAYS = WEEKDAYS.map((item) => item.key)
 const LEGACY_DAILY_CRON_PATTERN = /^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+([0-9,*]+)\s*$/
-const TIME_24H_PATTERN = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/
+const TIME_24H_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+const INTERVAL_MM_SS_PATTERN = /^(\d{1,4}):([0-5]\d)$/
 const PRIORITY_TIMEZONES = ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura', 'UTC']
 const FALLBACK_TIMEZONES = [
   'UTC',
@@ -129,20 +130,20 @@ function buildTimezoneOptions(currentValues: string[]) {
 }
 
 function toPaddedTime(hour: number, minute: number) {
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
-function minuteToTime(value: number) {
-  const normalized = ((value % 1440) + 1440) % 1440
-  const hour = Math.floor(normalized / 60)
-  const minute = normalized % 60
+function secondOfDayToTime(value: number) {
+  const normalized = ((value % 86_400) + 86_400) % 86_400
+  const hour = Math.floor(normalized / 3600)
+  const minute = Math.floor((normalized % 3600) / 60)
   return toPaddedTime(hour, minute)
 }
 
-function timeToMinute(time: string) {
+function timeToSecondOfDay(time: string) {
   const match = TIME_24H_PATTERN.exec(time)
   if (!match) return null
-  return Number(match[1]) * 60 + Number(match[2])
+  return Number(match[1]) * 3600 + Number(match[2]) * 60
 }
 
 function normalizeDayOrder(days: WeekdayKey[]) {
@@ -155,26 +156,46 @@ function toggleDay(days: WeekdayKey[], day: WeekdayKey) {
 }
 
 function normalizeTimeInput(raw: string) {
-  const digitsOnly = raw.replace(/\D/g, '').slice(0, 6)
+  const digitsOnly = raw.replace(/\D/g, '').slice(0, 4)
   if (digitsOnly.length <= 2) {
     return digitsOnly
   }
-  if (digitsOnly.length <= 4) {
-    return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2)}`
-  }
-  return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2, 4)}:${digitsOnly.slice(4)}`
+  return `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2)}`
 }
 
 function normalizeIntervalInput(raw: string) {
-  return raw.replace(/\D/g, '').slice(0, 4)
+  const digitsOnly = raw.replace(/\D/g, '').slice(0, 6)
+  if (digitsOnly.length === 0) {
+    return ''
+  }
+  if (digitsOnly.length <= 2) {
+    return `00:${digitsOnly.padStart(2, '0')}`
+  }
+  return `${digitsOnly.slice(0, -2)}:${digitsOnly.slice(-2)}`
 }
 
 function isValidTime24(value: string) {
   return TIME_24H_PATTERN.test(value)
 }
 
-function isValidIntervalMinutes(value: number) {
-  return Number.isInteger(value) && value >= 1 && value <= 1440
+function intervalToSeconds(value: string) {
+  const match = INTERVAL_MM_SS_PATTERN.exec(value)
+  if (!match) return null
+  const minutes = Number(match[1])
+  const seconds = Number(match[2])
+  const total = minutes * 60 + seconds
+  return total >= 1 && total <= 86_400 ? total : null
+}
+
+function secondsToInterval(value: number) {
+  const totalSeconds = Math.max(1, Math.min(86_400, Math.floor(value)))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function isValidIntervalSeconds(value: number) {
+  return Number.isInteger(value) && value >= 1 && value <= 86_400
 }
 
 function buildCronDaySegment(days: WeekdayKey[]) {
@@ -189,7 +210,7 @@ function buildCronDaySegment(days: WeekdayKey[]) {
 }
 
 function buildEnforcementCron(days: WeekdayKey[]) {
-  return `* * * * ${buildCronDaySegment(days)}`
+  return `* * * * * ${buildCronDaySegment(days)}`
 }
 
 function dayTokenToKey(token: string): WeekdayKey | null {
@@ -207,10 +228,10 @@ function dayTokenToKey(token: string): WeekdayKey | null {
 
 function parseDaysFromCron(cron: string): WeekdayKey[] | null {
   const segments = cron.trim().split(/\s+/)
-  if (segments.length !== 5) {
+  if (segments.length !== 5 && segments.length !== 6) {
     return null
   }
-  const daySegment = segments[4].trim()
+  const daySegment = segments[segments.length - 1].trim()
   if (daySegment === '*') {
     return [...ALL_DAYS]
   }
@@ -256,7 +277,7 @@ function fallbackTimeFromNextRun(schedule: ScheduleRule) {
     const hour = parts.find((part) => part.type === 'hour')?.value
     const minute = parts.find((part) => part.type === 'minute')?.value
     if (hour && minute) {
-      return `${hour}:${minute}:00`
+      return `${hour}:${minute}`
     }
   } catch {
     // fallback below
@@ -302,9 +323,9 @@ function Time24Input({ label, value, disabled, onChange }: Time24InputProps) {
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="HH:mm:ss"
+        placeholder="HH:mm"
         pattern={TIME_24H_PATTERN.source}
-        title="Gunakan format 24 jam HH:mm:ss. Detik disimpan pada resolusi menit."
+        title="Gunakan format 24 jam HH:mm."
         value={value}
         onChange={(event) => onChange(normalizeTimeInput(event.target.value))}
         required
@@ -364,6 +385,12 @@ type IntervalInputProps = {
 }
 
 function IntervalInput({ label, value, disabled, onChange }: IntervalInputProps) {
+  const [draft, setDraft] = useState(() => secondsToInterval(value))
+
+  useEffect(() => {
+    setDraft(secondsToInterval(value))
+  }, [value])
+
   return (
     <label>
       {label}
@@ -371,11 +398,22 @@ function IntervalInput({ label, value, disabled, onChange }: IntervalInputProps)
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="contoh: 1"
-        value={String(value)}
+        placeholder="mm:ss"
+        pattern={INTERVAL_MM_SS_PATTERN.source}
+        title="Gunakan format menit:detik, contoh 00:05 atau 01:30."
+        value={draft}
         onChange={(event) => {
           const normalized = normalizeIntervalInput(event.target.value)
-          onChange(normalized ? Number(normalized) : 0)
+          setDraft(normalized)
+          const seconds = intervalToSeconds(normalized)
+          if (seconds != null) {
+            onChange(seconds)
+          }
+        }}
+        onBlur={() => {
+          if (intervalToSeconds(draft) == null) {
+            setDraft(secondsToInterval(value))
+          }
         }}
         required
         disabled={disabled}
@@ -428,18 +466,18 @@ export function ScheduleManager({
   const [deviceIdInput, setDeviceIdInput] = useState('')
   const [timezone, setTimezone] = useState('Asia/Jakarta')
   const [activeDays, setActiveDays] = useState<WeekdayKey[]>([...ALL_DAYS])
-  const [timeFrom, setTimeFrom] = useState('18:00:00')
-  const [timeUntil, setTimeUntil] = useState('23:00:00')
+  const [timeFrom, setTimeFrom] = useState('18:00')
+  const [timeUntil, setTimeUntil] = useState('23:00')
   const [activeAction, setActiveAction] = useState<'ON' | 'OFF'>('ON')
-  const [enforceEveryMinute, setEnforceEveryMinute] = useState(1)
+  const [enforceEverySecond, setEnforceEverySecond] = useState(60)
 
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editTimezone, setEditTimezone] = useState('Asia/Jakarta')
   const [editDays, setEditDays] = useState<WeekdayKey[]>([...ALL_DAYS])
-  const [editTimeFrom, setEditTimeFrom] = useState('18:00:00')
-  const [editTimeUntil, setEditTimeUntil] = useState('23:00:00')
+  const [editTimeFrom, setEditTimeFrom] = useState('18:00')
+  const [editTimeUntil, setEditTimeUntil] = useState('23:00')
   const [editActiveAction, setEditActiveAction] = useState<'ON' | 'OFF'>('ON')
-  const [editEnforceEveryMinute, setEditEnforceEveryMinute] = useState(1)
+  const [editEnforceEverySecond, setEditEnforceEverySecond] = useState(60)
   const [editingLegacy, setEditingLegacy] = useState(false)
   const timezoneOptions = useMemo(() => buildTimezoneOptions([timezone, editTimezone]), [timezone, editTimezone])
 
@@ -484,9 +522,9 @@ export function ScheduleManager({
             timezone: rule.timezone,
             days,
             action: rule.action,
-            fromTime: minuteToTime(Number(rule.windowStartMinute)),
-            untilTime: minuteToTime(Number(rule.windowEndMinute)),
-            intervalMinutes: Number(rule.enforceEveryMinute),
+            fromTime: secondOfDayToTime(Number(rule.windowStartMinute)),
+            untilTime: secondOfDayToTime(Number(rule.windowEndMinute)),
+            intervalSeconds: Number(rule.enforceEveryMinute),
             nextRunAt: rule.nextRunAt,
             rules: [rule],
             groupId,
@@ -511,7 +549,7 @@ export function ScheduleManager({
           action: rule.action,
           fromTime: parsed.time,
           untilTime: parsed.time,
-          intervalMinutes: 0,
+          intervalSeconds: 0,
           nextRunAt: rule.nextRunAt,
           rules: [rule],
           groupId: null,
@@ -527,7 +565,7 @@ export function ScheduleManager({
           action: rule.action,
           fromTime: fallback,
           untilTime: fallback,
-          intervalMinutes: 0,
+          intervalSeconds: 0,
           nextRunAt: rule.nextRunAt,
           rules: [rule],
           groupId: null,
@@ -565,14 +603,14 @@ export function ScheduleManager({
                 activeDays.length === 0 ||
                 !isValidTime24(timeFrom) ||
                 !isValidTime24(timeUntil) ||
-                !isValidIntervalMinutes(enforceEveryMinute)
+                !isValidIntervalSeconds(enforceEverySecond)
               ) {
                 return
               }
 
-              const startMinute = timeToMinute(timeFrom)
-              const endMinute = timeToMinute(timeUntil)
-              if (startMinute == null || endMinute == null) return
+              const startSecond = timeToSecondOfDay(timeFrom)
+              const endSecond = timeToSecondOfDay(timeUntil)
+              if (startSecond == null || endSecond == null) return
 
               await onCreate({
                 deviceId: selectedDeviceId,
@@ -580,9 +618,9 @@ export function ScheduleManager({
                 enforcementCron: buildEnforcementCron(activeDays),
                 activeAction,
                 windowGroupId: crypto.randomUUID(),
-                windowStartMinute: startMinute,
-                windowEndMinute: endMinute,
-                enforceEveryMinute,
+                windowStartMinute: startSecond,
+                windowEndMinute: endSecond,
+                enforceEveryMinute: enforceEverySecond,
               })
             }}
             className="schedule-form"
@@ -631,9 +669,9 @@ export function ScheduleManager({
             disabled={busy || !hasManageableDevices}
           />
           <IntervalInput
-            label="Interval Eksekusi (menit)"
-            value={enforceEveryMinute}
-            onChange={setEnforceEveryMinute}
+            label="Interval Eksekusi (mm:ss)"
+            value={enforceEverySecond}
+            onChange={setEnforceEverySecond}
             disabled={busy || !hasManageableDevices}
           />
 
@@ -654,7 +692,7 @@ export function ScheduleManager({
               activeDays.length === 0 ||
               !isValidTime24(timeFrom) ||
               !isValidTime24(timeUntil) ||
-              !isValidIntervalMinutes(enforceEveryMinute)
+              !isValidIntervalSeconds(enforceEverySecond)
             }
           >
             {busy ? 'Memproses...' : 'Create Schedule'}
@@ -692,14 +730,14 @@ export function ScheduleManager({
                         editDays.length === 0 ||
                         !isValidTime24(editTimeFrom) ||
                         !isValidTime24(editTimeUntil) ||
-                        !isValidIntervalMinutes(editEnforceEveryMinute)
+                        !isValidIntervalSeconds(editEnforceEverySecond)
                       ) {
                         return
                       }
 
-                      const startMinute = timeToMinute(editTimeFrom)
-                      const endMinute = timeToMinute(editTimeUntil)
-                      if (startMinute == null || endMinute == null) {
+                      const startSecond = timeToSecondOfDay(editTimeFrom)
+                      const endSecond = timeToSecondOfDay(editTimeUntil)
+                      if (startSecond == null || endSecond == null) {
                         return
                       }
 
@@ -708,9 +746,9 @@ export function ScheduleManager({
                         cron: buildEnforcementCron(editDays),
                         timezone: editTimezone,
                         windowGroupId: editingWindow.groupId ?? crypto.randomUUID(),
-                        windowStartMinute: startMinute,
-                        windowEndMinute: endMinute,
-                        enforceEveryMinute: editEnforceEveryMinute,
+                        windowStartMinute: startSecond,
+                        windowEndMinute: endSecond,
+                        enforceEveryMinute: editEnforceEverySecond,
                       }
 
                       for (const rule of editingWindow.rules) {
@@ -747,9 +785,9 @@ export function ScheduleManager({
                       disabled={busy || !canMutateWindow}
                     />
                     <IntervalInput
-                      label="Interval Eksekusi (menit)"
-                      value={editEnforceEveryMinute}
-                      onChange={setEditEnforceEveryMinute}
+                      label="Interval Eksekusi (mm:ss)"
+                      value={editEnforceEverySecond}
+                      onChange={setEditEnforceEverySecond}
                       disabled={busy || !canMutateWindow}
                     />
 
@@ -778,7 +816,7 @@ export function ScheduleManager({
                           editDays.length === 0 ||
                           !isValidTime24(editTimeFrom) ||
                           !isValidTime24(editTimeUntil) ||
-                          !isValidIntervalMinutes(editEnforceEveryMinute)
+                          !isValidIntervalSeconds(editEnforceEverySecond)
                         }
                       >
                         Save
@@ -821,7 +859,7 @@ export function ScheduleManager({
                       </span>
                       <span className="schedule-chip">
                         <span>Interval</span>
-                        <strong>{window.intervalMinutes > 0 ? `${window.intervalMinutes} menit` : 'legacy'}</strong>
+                        <strong>{window.intervalSeconds > 0 ? secondsToInterval(window.intervalSeconds) : 'legacy'}</strong>
                       </span>
                       <span className="schedule-chip">
                         <span>TZ</span>
@@ -863,7 +901,7 @@ export function ScheduleManager({
                       setEditTimeFrom(window.fromTime)
                       setEditTimeUntil(window.untilTime)
                       setEditActiveAction(window.action)
-                      setEditEnforceEveryMinute(window.intervalMinutes > 0 ? window.intervalMinutes : 1)
+                      setEditEnforceEverySecond(window.intervalSeconds > 0 ? window.intervalSeconds : 60)
                       setEditingLegacy(window.legacy)
                     }}
                   >

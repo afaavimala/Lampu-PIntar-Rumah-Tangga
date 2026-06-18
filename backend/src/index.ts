@@ -11,6 +11,8 @@ const app = createApp()
 
 export { createApp, MqttGatewayDurableObject }
 
+const MQTT_GATEWAY_OBJECT_NAME = 'mqtt-gateway-singleton'
+
 function looksLikeStaticAssetPath(pathname: string) {
   return /\.[^/]+$/.test(pathname)
 }
@@ -55,7 +57,7 @@ export default {
   },
   scheduled: async (_event: unknown, env: EnvBindings, ctx: WorkerExecutionContext) => {
     ctx.waitUntil(
-      runDueSchedules(env)
+      runScheduledTick(env)
         .then((result) => {
           console.log('Scheduler tick completed', result)
         })
@@ -64,4 +66,23 @@ export default {
         }),
     )
   },
+}
+
+async function runScheduledTick(env: EnvBindings) {
+  if (!env.MQTT_GATEWAY) {
+    return runDueSchedules(env)
+  }
+
+  const objectId = env.MQTT_GATEWAY.idFromName(MQTT_GATEWAY_OBJECT_NAME)
+  const objectStub = env.MQTT_GATEWAY.get(objectId)
+  const response = await objectStub.fetch('https://mqtt-gateway.internal/scheduler/tick', {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error(`Scheduler Durable Object tick failed (${response.status})`)
+  }
+
+  const payload = (await response.json()) as { data?: unknown }
+  return payload.data ?? { processed: 0, failed: 0 }
 }

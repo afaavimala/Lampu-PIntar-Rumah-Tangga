@@ -24,9 +24,9 @@ const createScheduleSchema = z.object({
   startAt: z.string().datetime().optional(),
   endAt: z.string().datetime().optional(),
   windowGroupId: z.string().min(1).max(191).optional(),
-  windowStartMinute: z.number().int().min(0).max(1439).optional(),
-  windowEndMinute: z.number().int().min(0).max(1439).optional(),
-  enforceEveryMinute: z.number().int().min(1).max(1440).optional(),
+  windowStartMinute: z.number().int().min(0).max(86_399).optional(),
+  windowEndMinute: z.number().int().min(0).max(86_399).optional(),
+  enforceEveryMinute: z.number().int().min(1).max(86_400).optional(),
 })
 
 const patchScheduleSchema = z.object({
@@ -37,9 +37,9 @@ const patchScheduleSchema = z.object({
   startAt: z.string().datetime().nullable().optional(),
   endAt: z.string().datetime().nullable().optional(),
   windowGroupId: z.string().min(1).max(191).nullable().optional(),
-  windowStartMinute: z.number().int().min(0).max(1439).nullable().optional(),
-  windowEndMinute: z.number().int().min(0).max(1439).nullable().optional(),
-  enforceEveryMinute: z.number().int().min(1).max(1440).nullable().optional(),
+  windowStartMinute: z.number().int().min(0).max(86_399).nullable().optional(),
+  windowEndMinute: z.number().int().min(0).max(86_399).nullable().optional(),
+  enforceEveryMinute: z.number().int().min(1).max(86_400).nullable().optional(),
 })
 
 export const scheduleRoutes = new Hono<AppEnv>()
