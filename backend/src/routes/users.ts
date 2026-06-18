@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { AppEnv, DevicePermission, SchedulePermission } from '../types/app'
 import { parseJsonBody } from '../lib/body'
 import {
+  archiveUserByAdmin,
   canManageSchedulesForAssignment,
   createUser,
   getUserByEmail,
@@ -11,6 +12,7 @@ import {
   listUserDeviceAssignments,
   listUsers,
   replaceUserDeviceAssignments,
+  restoreUserByAdmin,
   updateUserByAdmin,
 } from '../lib/db'
 import { hashPassword } from '../lib/password'
@@ -63,6 +65,8 @@ function toUserDto(user: {
   is_active: number
   created_at: string
   updated_at: string | null
+  deleted_at: string | null
+  deleted_by_user_id: number | null
 }) {
   return {
     id: Number(user.id),
@@ -72,11 +76,18 @@ function toUserDto(user: {
     isActive: Number(user.is_active) === 1,
     createdAt: user.created_at,
     updatedAt: user.updated_at,
+    deletedAt: user.deleted_at,
+    deletedByUserId:
+      user.deleted_by_user_id == null ? null : Number(user.deleted_by_user_id),
+    isArchived: user.deleted_at != null,
   }
 }
 
 userRoutes.get('/users', requireAdminUser(), async (c) => {
-  const users = await listUsers(c.env.DB)
+  const includeArchived = ['1', 'true', 'yes'].includes(
+    (c.req.query('includeArchived') ?? '').trim().toLowerCase(),
+  )
+  const users = await listUsers(c.env.DB, { includeArchived })
   return ok(c, users.map(toUserDto))
 })
 
@@ -122,6 +133,9 @@ userRoutes.patch('/users/:userId', requireAdminUser(), async (c) => {
   if (!target) {
     return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
   }
+  if (target.deleted_at != null) {
+    return fail(c, 'VALIDATION_ERROR', 'Archived user must be restored before editing', 400)
+  }
 
   if (parsed.data.email && parsed.data.email.toLowerCase() !== target.email.toLowerCase()) {
     const existing = await getUserByEmail(c.env.DB, parsed.data.email)
@@ -142,6 +156,58 @@ userRoutes.patch('/users/:userId', requireAdminUser(), async (c) => {
     isActive: parsed.data.isActive,
   })
 
+  const updated = await getUserById(c.env.DB, userId, c.env.SEED_ADMIN_EMAIL)
+  if (!updated) {
+    return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
+  }
+  return ok(c, toUserDto(updated))
+})
+
+userRoutes.delete('/users/:userId', requireAdminUser(), async (c) => {
+  const principal = c.get('principal')
+  const userId = Number(c.req.param('userId'))
+  if (Number.isNaN(userId)) {
+    return fail(c, 'VALIDATION_ERROR', 'Invalid userId', 400)
+  }
+  if (!principal || principal.kind !== 'user') {
+    return fail(c, 'NOT_AUTHENTICATED', 'Authentication required', 401)
+  }
+
+  const target = await getUserById(c.env.DB, userId, c.env.SEED_ADMIN_EMAIL)
+  if (!target) {
+    return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
+  }
+  if (target.role === 'admin' || target.id === principal.userId) {
+    return fail(c, 'VALIDATION_ERROR', 'Admin user cannot be archived', 400)
+  }
+
+  await archiveUserByAdmin(c.env.DB, {
+    userId,
+    actorUserId: principal.userId,
+  })
+
+  const updated = await getUserById(c.env.DB, userId, c.env.SEED_ADMIN_EMAIL)
+  if (!updated) {
+    return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
+  }
+  return ok(c, toUserDto(updated))
+})
+
+userRoutes.post('/users/:userId/restore', requireAdminUser(), async (c) => {
+  const userId = Number(c.req.param('userId'))
+  if (Number.isNaN(userId)) {
+    return fail(c, 'VALIDATION_ERROR', 'Invalid userId', 400)
+  }
+
+  const target = await getUserById(c.env.DB, userId, c.env.SEED_ADMIN_EMAIL)
+  if (!target) {
+    return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
+  }
+  if (target.role !== 'member') {
+    return fail(c, 'VALIDATION_ERROR', 'Only member users can be restored', 400)
+  }
+
+  await restoreUserByAdmin(c.env.DB, userId)
   const updated = await getUserById(c.env.DB, userId, c.env.SEED_ADMIN_EMAIL)
   if (!updated) {
     return fail(c, 'USER_NOT_FOUND', 'User not found', 404)
@@ -204,6 +270,9 @@ userRoutes.put('/users/:userId/assignments', requireAdminUser(), async (c) => {
   }
   if (target.role !== 'member') {
     return fail(c, 'VALIDATION_ERROR', 'Only member users can receive assignments', 400)
+  }
+  if (target.deleted_at != null) {
+    return fail(c, 'VALIDATION_ERROR', 'Archived user must be restored before assignment', 400)
   }
 
   const devices = await listAllDevices(c.env.DB)

@@ -18,7 +18,15 @@ import {
 import { createUserJwt } from '../lib/auth'
 import { fail, ok } from '../lib/response'
 import { hashPassword, isPreferredPasswordHash, verifyPassword } from '../lib/password'
-import { applyRateLimitHeaders, consumeRateLimit, getClientIp, readPositiveInt } from '../lib/rate-limit'
+import {
+  applyRateLimitHeaders,
+  checkLoginRateLimit,
+  clearRateLimit,
+  getClientIp,
+  readPositiveInt,
+  readPositiveNumber,
+  recordFailedLoginAttempt,
+} from '../lib/rate-limit'
 import {
   ACCESS_TOKEN_COOKIE_NAME,
   REFRESH_TOKEN_COOKIE_NAME,
@@ -85,15 +93,20 @@ function setSessionCookies(
 }
 
 authRoutes.post('/login', async (c) => {
-  const loginRateLimit = await consumeRateLimit(c.env.DB, {
+  const clientIp = getClientIp(c)
+  const loginRateLimitInput = {
     bucket: 'auth_login',
-    identifier: getClientIp(c),
+    identifier: clientIp,
     limit: readPositiveInt(c.env.AUTH_LOGIN_RATE_LIMIT_MAX, 8),
     windowSec: readPositiveInt(c.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC, 60),
-  })
+    backoffBaseSec: readPositiveInt(c.env.AUTH_LOGIN_BACKOFF_BASE_SEC, 30),
+    backoffFactor: readPositiveNumber(c.env.AUTH_LOGIN_BACKOFF_FACTOR, 2),
+    backoffMaxSec: readPositiveInt(c.env.AUTH_LOGIN_BACKOFF_MAX_SEC, 900),
+  }
+  const loginRateLimit = await checkLoginRateLimit(c.env.DB, loginRateLimitInput)
   applyRateLimitHeaders(c, loginRateLimit)
   if (!loginRateLimit.allowed) {
-    return fail(c, 'RATE_LIMITED', 'Too many login attempts', 429, {
+    return fail(c, 'RATE_LIMITED', 'Terlalu banyak percobaan login', 429, {
       retryAfterSec: loginRateLimit.retryAfterSec,
     })
   }
@@ -122,9 +135,20 @@ authRoutes.post('/login', async (c) => {
     }
   }
 
+  const rejectInvalidLogin = async () => {
+    const failedLimit = await recordFailedLoginAttempt(c.env.DB, loginRateLimitInput)
+    applyRateLimitHeaders(c, failedLimit)
+    if (!failedLimit.allowed) {
+      return fail(c, 'RATE_LIMITED', 'Terlalu banyak percobaan login', 429, {
+        retryAfterSec: failedLimit.retryAfterSec,
+      })
+    }
+    return fail(c, 'AUTH_INVALID_TOKEN', 'Email atau password tidak sesuai', 401)
+  }
+
   const user = await getUserByEmail(c.env.DB, parsed.data.email)
-  if (!user || user.is_active !== 1) {
-    return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid email or password', 401)
+  if (!user || user.is_active !== 1 || user.deleted_at != null) {
+    return rejectInvalidLogin()
   }
 
   const seedPasswordAccepted =
@@ -139,7 +163,7 @@ authRoutes.post('/login', async (c) => {
       }
     : await verifyPassword(parsed.data.password, user.password_hash)
   if (!verification.ok) {
-    return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid email or password', 401)
+    return rejectInvalidLogin()
   }
 
   if (verification.needsRehash && verification.upgradedHash) {
@@ -154,13 +178,14 @@ authRoutes.post('/login', async (c) => {
   const refreshToken = createOpaqueRefreshToken()
   const refreshTokenHash = await hashRefreshToken(refreshToken)
   const refreshTtlSec = getRefreshTtlSec(c.env)
+  await clearRateLimit(c.env.DB, loginRateLimitInput)
 
   await createAuthSession(c.env.DB, {
     userId: user.id,
     refreshTokenHash,
     expiresAt: getRefreshTokenExpiryMs(refreshTtlSec),
     userAgent: c.req.header('user-agent') ?? null,
-    ipAddress: getClientIp(c),
+    ipAddress: clientIp,
   })
 
   setSessionCookies(c, {
@@ -204,7 +229,7 @@ authRoutes.post('/refresh', async (c) => {
     return fail(c, 'AUTH_EXPIRED_TOKEN', 'Refresh token expired', 401)
   }
 
-  if (Number(session.is_active) !== 1) {
+  if (Number(session.is_active) !== 1 || session.deleted_at != null) {
     await revokeAuthSessionByRefreshTokenHash(c.env.DB, refreshTokenHash)
     clearSessionCookies(c)
     return fail(c, 'AUTH_INVALID_TOKEN', 'User is inactive', 401)

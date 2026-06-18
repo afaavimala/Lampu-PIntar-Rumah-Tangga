@@ -35,6 +35,9 @@ export type UserSummary = {
   isActive: boolean
   createdAt: string
   updatedAt: string | null
+  deletedAt: string | null
+  deletedByUserId: number | null
+  isArchived: boolean
 }
 
 export type UserAssignment = {

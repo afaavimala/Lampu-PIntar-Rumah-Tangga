@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
+  archiveUser,
   createUser,
   getUserAssignments,
   listUsers,
   replaceUserAssignments,
+  restoreUser,
   updateUser,
 } from '../lib/api'
 import type {
@@ -12,6 +14,7 @@ import type {
   UserAssignment,
   UserSummary,
 } from '../lib/types'
+import { XIcon } from './UiIcons'
 
 const DEVICE_PERMISSION_OPTIONS: Array<{ value: DevicePermission; label: string }> = [
   { value: 'monitoring', label: 'Monitoring' },
@@ -50,6 +53,7 @@ export function UserManager() {
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [loadingAssignments, setLoadingAssignments] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [includeArchived, setIncludeArchived] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,7 +67,7 @@ export function UserManager() {
     setLoadingUsers(true)
     setError(null)
     try {
-      const nextUsers = await listUsers()
+      const nextUsers = await listUsers({ includeArchived })
       const nextMembers = nextUsers.filter((user) => user.role === 'member')
       setUsers(nextUsers)
 
@@ -77,7 +81,7 @@ export function UserManager() {
     } finally {
       setLoadingUsers(false)
     }
-  }, [])
+  }, [includeArchived])
 
   const loadAssignments = useCallback(async (userId: number) => {
     setLoadingAssignments(true)
@@ -145,6 +149,10 @@ export function UserManager() {
     setMessage(null)
     setError(null)
     try {
+      if (selectedUser.isArchived) {
+        setError('User archived harus di-restore sebelum diedit.')
+        return
+      }
       const updated = await updateUser({
         userId: selectedUser.id,
         name: editName.trim(),
@@ -157,6 +165,36 @@ export function UserManager() {
       await loadUsers(updated.id)
     } catch (err) {
       setError(toErrorMessage(err, 'Gagal memperbarui user'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleArchiveUser(user: UserSummary) {
+    setSaving(true)
+    setMessage(null)
+    setError(null)
+    try {
+      const updated = await archiveUser(user.id)
+      setMessage(`${updated.name} berhasil diarsipkan.`)
+      await loadUsers(includeArchived ? updated.id : null)
+    } catch (err) {
+      setError(toErrorMessage(err, 'Gagal mengarsipkan user'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRestoreUser(user: UserSummary) {
+    setSaving(true)
+    setMessage(null)
+    setError(null)
+    try {
+      const updated = await restoreUser(user.id)
+      setMessage(`${updated.name} berhasil direstore.`)
+      await loadUsers(updated.id)
+    } catch (err) {
+      setError(toErrorMessage(err, 'Gagal merestore user'))
     } finally {
       setSaving(false)
     }
@@ -196,6 +234,10 @@ export function UserManager() {
 
   async function handleSaveAssignments() {
     if (!selectedUser) return
+    if (selectedUser.isArchived) {
+      setError('User archived harus di-restore sebelum assignment diubah.')
+      return
+    }
 
     setSaving(true)
     setMessage(null)
@@ -226,6 +268,15 @@ export function UserManager() {
           <h2>User Manager</h2>
           <p className="small">Kelola member dan akses device/jadwal.</p>
         </div>
+        <label className="inline-check archived-toggle">
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(event) => setIncludeArchived(event.target.checked)}
+            disabled={saving || loadingUsers}
+          />
+          Tampilkan Archived
+        </label>
       </div>
 
       {error ? <p className="error global-error">{error}</p> : null}
@@ -298,11 +349,20 @@ export function UserManager() {
               </thead>
               <tbody>
                 {members.map((user) => (
-                  <tr key={user.id} className={user.id === selectedUserId ? 'selected' : ''}>
+                  <tr
+                    key={user.id}
+                    className={`${user.id === selectedUserId ? 'selected' : ''} ${
+                      user.isArchived ? 'archived' : ''
+                    }`}
+                  >
                     <td>{user.email}</td>
                     <td>{user.name}</td>
-                    <td>{user.isActive ? 'Aktif' : 'Nonaktif'}</td>
                     <td>
+                      <span className={`status-chip ${user.isArchived ? 'archived' : user.isActive ? 'active' : 'inactive'}`}>
+                        {user.isArchived ? 'Archived' : user.isActive ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </td>
+                    <td className="table-actions">
                       <button
                         type="button"
                         className="table-button"
@@ -311,6 +371,27 @@ export function UserManager() {
                       >
                         Pilih
                       </button>
+                      {user.isArchived ? (
+                        <button
+                          type="button"
+                          className="table-button"
+                          onClick={() => void handleRestoreUser(user)}
+                          disabled={saving}
+                        >
+                          Restore
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="table-button table-icon-button danger"
+                          onClick={() => void handleArchiveUser(user)}
+                          disabled={saving}
+                          aria-label={`Arsipkan ${user.name}`}
+                          title={`Arsipkan ${user.name}`}
+                        >
+                          <XIcon className="table-button-icon" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -324,6 +405,9 @@ export function UserManager() {
         <div className="assignment-area">
           <form className="panel-form member-edit-form" onSubmit={(event) => void handleSaveUser(event)}>
             <h3>Edit Member</h3>
+            {selectedUser.isArchived ? (
+              <p className="permission-note">User ini archived. Restore dulu untuk mengedit akun atau assignment.</p>
+            ) : null}
             <label>
               Nama
               <input
@@ -333,7 +417,7 @@ export function UserManager() {
                 minLength={1}
                 maxLength={255}
                 required
-                disabled={saving}
+                disabled={saving || selectedUser.isArchived}
               />
             </label>
             <label>
@@ -343,7 +427,7 @@ export function UserManager() {
                 value={editEmail}
                 onChange={(event) => setEditEmail(event.target.value)}
                 required
-                disabled={saving}
+                disabled={saving || selectedUser.isArchived}
               />
             </label>
             <label>
@@ -355,7 +439,7 @@ export function UserManager() {
                 minLength={8}
                 maxLength={128}
                 placeholder="Kosongkan jika tidak diubah"
-                disabled={saving}
+                disabled={saving || selectedUser.isArchived}
               />
             </label>
             <label className="inline-check">
@@ -363,13 +447,19 @@ export function UserManager() {
                 type="checkbox"
                 checked={editActive}
                 onChange={(event) => setEditActive(event.target.checked)}
-                disabled={saving}
+                disabled={saving || selectedUser.isArchived}
               />
               Aktif
             </label>
             <button
               type="submit"
-              disabled={saving || !editName.trim() || !editEmail.trim() || (editPassword.length > 0 && editPassword.length < 8)}
+              disabled={
+                saving ||
+                selectedUser.isArchived ||
+                !editName.trim() ||
+                !editEmail.trim() ||
+                (editPassword.length > 0 && editPassword.length < 8)
+              }
             >
               {saving ? 'Menyimpan...' : 'Simpan User'}
             </button>
@@ -385,7 +475,7 @@ export function UserManager() {
                 type="button"
                 className="panel-action"
                 onClick={() => void handleSaveAssignments()}
-                disabled={saving || loadingAssignments || assignments.length === 0}
+                disabled={saving || loadingAssignments || assignments.length === 0 || selectedUser.isArchived}
               >
                 {saving ? 'Menyimpan...' : 'Simpan Assignment'}
               </button>
@@ -418,7 +508,7 @@ export function UserManager() {
                             onChange={(event) =>
                               updateAssignment(assignment.deviceId, { assigned: event.target.checked })
                             }
-                            disabled={saving}
+                            disabled={saving || selectedUser.isArchived}
                             aria-label={`Assign ${assignment.name}`}
                           />
                         </td>
@@ -442,7 +532,7 @@ export function UserManager() {
                                     : assignment.schedulePermission,
                               })
                             }
-                            disabled={saving || !assignment.assigned}
+                            disabled={saving || selectedUser.isArchived || !assignment.assigned}
                           >
                             {DEVICE_PERMISSION_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -459,7 +549,7 @@ export function UserManager() {
                                 schedulePermission: event.target.value as SchedulePermission,
                               })
                             }
-                            disabled={saving || !assignment.assigned}
+                            disabled={saving || selectedUser.isArchived || !assignment.assigned}
                           >
                             {SCHEDULE_PERMISSION_OPTIONS.map((option) => (
                               <option

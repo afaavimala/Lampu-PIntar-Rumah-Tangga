@@ -168,6 +168,8 @@ async function ensureSchemaCompatibility(conn) {
   await ensureColumn(conn, 'users', 'role', "VARCHAR(32) NOT NULL DEFAULT 'member'")
   await ensureColumn(conn, 'users', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1')
   await ensureColumn(conn, 'users', 'updated_at', 'VARCHAR(64) NULL')
+  await ensureColumn(conn, 'users', 'deleted_at', 'VARCHAR(64) NULL')
+  await ensureColumn(conn, 'users', 'deleted_by_user_id', 'BIGINT UNSIGNED NULL')
   await ensureColumn(conn, 'devices', 'command_channel', "VARCHAR(32) NOT NULL DEFAULT 'POWER'")
   await ensureColumn(conn, 'devices', 'mqtt_device_id', "VARCHAR(191) NOT NULL DEFAULT ''")
   await ensureColumn(conn, 'user_devices', 'device_permission', "VARCHAR(32) NOT NULL DEFAULT 'monitoring'")
@@ -180,6 +182,7 @@ async function ensureSchemaCompatibility(conn) {
   await ensureColumn(conn, 'device_schedules', 'window_end_minute', 'INT NULL')
   await ensureColumn(conn, 'device_schedules', 'enforce_every_minute', 'INT NULL')
   await ensureIndex(conn, 'device_schedules', 'idx_device_schedules_window_group', '(window_group_id)')
+  await ensureIndex(conn, 'users', 'idx_users_deleted_at', '(deleted_at)')
   await conn.query(
     `UPDATE devices
         SET mqtt_device_id = COALESCE(NULLIF(TRIM(mqtt_device_id), ''), device_id)

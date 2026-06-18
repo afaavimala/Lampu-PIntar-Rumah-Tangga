@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sign } from 'hono/jwt'
 import { createApp } from '../src/app'
 import type { AppDatabase, DbAllResult, DbPreparedStatement, DbRunResult } from '../src/types/db'
@@ -15,6 +15,8 @@ type TestUser = {
   email: string
   role: 'admin' | 'member'
   isActive: number
+  deletedAt?: string | null
+  deletedByUserId?: number | null
 }
 
 type Assignment = {
@@ -69,6 +71,7 @@ function compatibilityRun(sql: string): DbRunResult | null {
     sql.startsWith('UPDATE device_schedules') ||
     sql.includes('INSERT INTO rate_limit_hits') ||
     sql === 'UPDATE rate_limit_hits SET request_count = ?, updated_at = ? WHERE rate_key = ?' ||
+    sql.startsWith('DELETE FROM rate_limit_hits') ||
     sql.startsWith('DELETE FROM user_devices') ||
     sql.startsWith('INSERT INTO idempotency_records') ||
     sql.startsWith('UPDATE auth_sessions')
@@ -88,8 +91,14 @@ function userRow(user: TestUser) {
     is_active: user.isActive,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: null,
+    deleted_at: user.deletedAt ?? null,
+    deleted_by_user_id: user.deletedByUserId ?? null,
   }
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 async function userToken(user: TestUser) {
   const nowSec = Math.floor(Date.now() / 1000)
@@ -605,6 +614,196 @@ describe('RBAC route guards', () => {
     expect(scheduleResponse.status).toBe(201)
     expect(payload.success).toBe(true)
     expect(payload.data.userId).toBe(2)
+  })
+
+  it('applies exponential login backoff and clears it after successful login', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(1)
+
+    const admin: TestUser = { id: 1, email: 'admin@example.com', role: 'admin', isActive: 1 }
+    let rateRow: { request_count: number; reset_at: number } | null = null
+
+    const db = createDbMock((sql, params, mode) => {
+      if (mode === 'first') {
+        if (sql.includes('FROM rate_limit_hits')) return rateRow
+        if (sql.includes('FROM users') && sql.includes('WHERE lower(email) = lower(?)')) {
+          return String(params[0]).toLowerCase() === admin.email ? userRow(admin) : null
+        }
+        return null
+      }
+
+      if (mode === 'run') {
+        if (sql.includes('INSERT INTO rate_limit_hits')) {
+          rateRow = {
+            request_count: Number(params[1]),
+            reset_at: Number(params[2]),
+          }
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
+        if (sql.startsWith('DELETE FROM rate_limit_hits')) {
+          rateRow = null
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
+        if (sql.startsWith('INSERT INTO auth_sessions')) {
+          return { meta: { changes: 1, last_row_id: 22 } } satisfies DbRunResult
+        }
+        return compatibilityRun(sql)
+      }
+
+      return []
+    })
+    const app = createApp()
+    const env = {
+      ...baseEnv(db),
+      SEED_ADMIN_EMAIL: admin.email,
+      SEED_ADMIN_PASSWORD: 'correct-password',
+      AUTH_LOGIN_RATE_LIMIT_MAX: '2',
+      AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC: '60',
+      AUTH_LOGIN_BACKOFF_BASE_SEC: '5',
+      AUTH_LOGIN_BACKOFF_FACTOR: '3',
+      AUTH_LOGIN_BACKOFF_MAX_SEC: '60',
+    }
+
+    async function attempt(password: string) {
+      return app.request(
+        '/api/v1/auth/login',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: admin.email, password }),
+        },
+        env,
+      )
+    }
+
+    expect((await attempt('wrong-pass-1')).status).toBe(401)
+    expect((await attempt('wrong-pass-2')).status).toBe(401)
+
+    const firstBlocked = await attempt('wrong-pass-3')
+    expect(firstBlocked.status).toBe(429)
+    expect(firstBlocked.headers.get('retry-after')).toBe('5')
+
+    const secondBlocked = await attempt('wrong-pass-4')
+    expect(secondBlocked.status).toBe(429)
+    expect(secondBlocked.headers.get('retry-after')).toBe('15')
+
+    rateRow = { request_count: 4, reset_at: Date.now() - 1 }
+    const success = await attempt('correct-password')
+    expect(success.status).toBe(200)
+    expect(rateRow).toBeNull()
+  })
+
+  it('archives, hides, rejects login, and restores member users', async () => {
+    const admin: TestUser = { id: 1, email: 'admin@example.com', role: 'admin', isActive: 1 }
+    const member: TestUser = { id: 2, name: 'Member Archive', email: 'member@example.com', role: 'member', isActive: 1 }
+
+    const db = createDbMock((sql, params, mode) => {
+      if (mode === 'first') {
+        if (sql.includes('FROM rate_limit_hits')) return null
+        if (sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
+          const id = Number(params[0])
+          if (id === admin.id) return userRow(admin)
+          if (id === member.id) return userRow(member)
+          return null
+        }
+        if (sql.includes('FROM users') && sql.includes('WHERE lower(email) = lower(?)')) {
+          const email = String(params[0]).toLowerCase()
+          if (email === admin.email) return userRow(admin)
+          if (email === member.email) return userRow(member)
+          return null
+        }
+        return null
+      }
+
+      if (mode === 'all') {
+        if (sql.includes('FROM users') && sql.includes('ORDER BY role ASC')) {
+          const rows = [userRow(admin), userRow(member)]
+          return sql.includes('WHERE deleted_at IS NULL')
+            ? rows.filter((user) => user.deleted_at == null)
+            : rows
+        }
+        return []
+      }
+
+      if (mode === 'run') {
+        if (sql.includes('deleted_at = COALESCE')) {
+          member.isActive = 0
+          member.deletedAt = String(params[0])
+          member.deletedByUserId = Number(params[1])
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
+        if (sql.includes('SET is_active = 1') && sql.includes('deleted_at = NULL')) {
+          member.isActive = 1
+          member.deletedAt = null
+          member.deletedByUserId = null
+          return { meta: { changes: 1, last_row_id: 0 } } satisfies DbRunResult
+        }
+        return compatibilityRun(sql)
+      }
+
+      return null
+    })
+    const app = createApp()
+    const adminAuthorization = `Bearer ${await userToken(admin)}`
+
+    const archiveResponse = await app.request(
+      '/api/v1/users/2',
+      {
+        method: 'DELETE',
+        headers: { authorization: adminAuthorization },
+      },
+      baseEnv(db),
+    )
+    const archivePayload = (await archiveResponse.json()) as { data: { isArchived: boolean; isActive: boolean } }
+    expect(archiveResponse.status).toBe(200)
+    expect(archivePayload.data.isArchived).toBe(true)
+    expect(archivePayload.data.isActive).toBe(false)
+
+    const defaultListResponse = await app.request(
+      '/api/v1/users',
+      { headers: { authorization: adminAuthorization } },
+      baseEnv(db),
+    )
+    const defaultList = (await defaultListResponse.json()) as { data: Array<{ id: number }> }
+    expect(defaultList.data.some((user) => user.id === member.id)).toBe(false)
+
+    const archivedListResponse = await app.request(
+      '/api/v1/users?includeArchived=1',
+      { headers: { authorization: adminAuthorization } },
+      baseEnv(db),
+    )
+    const archivedList = (await archivedListResponse.json()) as { data: Array<{ id: number; isArchived: boolean }> }
+    expect(archivedList.data.find((user) => user.id === member.id)?.isArchived).toBe(true)
+
+    const loginResponse = await app.request(
+      '/api/v1/auth/login',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: member.email, password: 'member12345' }),
+      },
+      baseEnv(db),
+    )
+    expect(loginResponse.status).toBe(401)
+
+    const staleTokenResponse = await app.request(
+      '/api/v1/status',
+      { headers: { authorization: `Bearer ${await userToken(member)}` } },
+      baseEnv(db),
+    )
+    expect(staleTokenResponse.status).toBe(401)
+
+    const restoreResponse = await app.request(
+      '/api/v1/users/2/restore',
+      {
+        method: 'POST',
+        headers: { authorization: adminAuthorization },
+      },
+      baseEnv(db),
+    )
+    const restorePayload = (await restoreResponse.json()) as { data: { isArchived: boolean; isActive: boolean } }
+    expect(restoreResponse.status).toBe(200)
+    expect(restorePayload.data.isArchived).toBe(false)
+    expect(restorePayload.data.isActive).toBe(true)
   })
 
   it('rejects inactive users at login', async () => {

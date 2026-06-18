@@ -1,17 +1,44 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BulbIcon, EyeIcon, LockIcon, MailIcon } from './UiIcons'
 
 type LoginFormProps = {
   loading: boolean
   error: string | null
+  retryAfterSec?: number | null
   onLogin: (email: string, password: string) => Promise<void>
 }
 
-export function LoginForm({ loading, error, onLogin }: LoginFormProps) {
+export function LoginForm({ loading, error, retryAfterSec = null, onLogin }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [remainingSec, setRemainingSec] = useState(0)
+
+  useEffect(() => {
+    setRemainingSec(Math.max(0, Math.ceil(retryAfterSec ?? 0)))
+  }, [retryAfterSec])
+
+  useEffect(() => {
+    if (remainingSec <= 0) {
+      return undefined
+    }
+
+    const timer = window.setInterval(() => {
+      setRemainingSec((current) => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [remainingSec])
+
+  const rateLimitMessage =
+    remainingSec > 0
+      ? `Terlalu banyak percobaan login. Tunggu ${remainingSec} detik lalu coba lagi.`
+      : retryAfterSec
+        ? 'Waktu tunggu selesai. Silakan coba login lagi.'
+        : null
+  const visibleError = rateLimitMessage ?? error
+  const submitDisabled = loading || remainingSec > 0
 
   return (
     <section className="login-screen">
@@ -26,6 +53,9 @@ export function LoginForm({ loading, error, onLogin }: LoginFormProps) {
           <form
             onSubmit={async (event) => {
               event.preventDefault()
+              if (submitDisabled) {
+                return
+              }
               await onLogin(email, password)
             }}
             className="login-form-blue"
@@ -79,9 +109,9 @@ export function LoginForm({ loading, error, onLogin }: LoginFormProps) {
               Remember Me
             </label>
 
-            {error ? <p className="error login-error">{error}</p> : null}
+            {visibleError ? <p className="error login-error">{visibleError}</p> : null}
 
-            <button type="submit" disabled={loading} className="login-button">
+            <button type="submit" disabled={submitDisabled} className="login-button">
               {loading ? 'LOADING...' : 'LOGIN'}
             </button>
           </form>

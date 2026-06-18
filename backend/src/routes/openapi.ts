@@ -24,7 +24,7 @@ openApiRoutes.get('/openapi.json', (c) => {
           },
         },
         patch: {
-          summary: 'Update current user email/password',
+          summary: 'Update current user name/email/password',
           requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/ProfilePatch' } } } },
           responses: {
             200: { description: 'Updated profile', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSummaryEnvelope' } } } },
@@ -32,7 +32,18 @@ openApiRoutes.get('/openapi.json', (c) => {
         },
       },
       '/api/v1/users': {
-        get: { summary: 'Admin: list users' },
+        get: {
+          summary: 'Admin: list users',
+          parameters: [
+            {
+              name: 'includeArchived',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['1', 'true', 'yes'] },
+              description: 'Include soft-deleted/archived member users when truthy.',
+            },
+          ],
+        },
         post: {
           summary: 'Admin: create member user',
           requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateUserRequest' } } } },
@@ -40,8 +51,18 @@ openApiRoutes.get('/openapi.json', (c) => {
       },
       '/api/v1/users/{userId}': {
         patch: {
-          summary: 'Admin: update member email/password/status',
+          summary: 'Admin: update member name/email/password/status',
           requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/PatchUserRequest' } } } },
+        },
+        delete: {
+          summary: 'Admin: archive member user',
+          description: 'Soft delete only: sets deletedAt and disables login without removing historical schedules/logs.',
+        },
+      },
+      '/api/v1/users/{userId}/restore': {
+        post: {
+          summary: 'Admin: restore archived member user',
+          description: 'Clears deletedAt and reactivates the member. Assignments are retained.',
         },
       },
       '/api/v1/users/{userId}/assignments': {
@@ -114,8 +135,22 @@ openApiRoutes.get('/openapi.json', (c) => {
             isActive: { type: 'boolean' },
             createdAt: { type: 'string' },
             updatedAt: { type: ['string', 'null'] },
+            deletedAt: { type: ['string', 'null'] },
+            deletedByUserId: { type: ['integer', 'null'] },
+            isArchived: { type: 'boolean' },
           },
-          required: ['id', 'name', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
+          required: [
+            'id',
+            'name',
+            'email',
+            'role',
+            'isActive',
+            'createdAt',
+            'updatedAt',
+            'deletedAt',
+            'deletedByUserId',
+            'isArchived',
+          ],
         },
         UserSummaryEnvelope: {
           allOf: [

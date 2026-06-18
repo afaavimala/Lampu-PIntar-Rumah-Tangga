@@ -15,6 +15,7 @@ export type AuthSessionWithUser = {
   email: string
   role: UserRole
   is_active: number
+  deleted_at: string | null
   refresh_token_hash: string
   expires_at: number
   created_at: string
@@ -33,6 +34,8 @@ export type UserRecord = {
   is_active: number
   created_at: string
   updated_at: string | null
+  deleted_at: string | null
+  deleted_by_user_id: number | null
 }
 
 export type UserSummaryRecord = Omit<UserRecord, 'password_hash'>
@@ -142,6 +145,8 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'member'`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN updated_at VARCHAR(64) NULL`)
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN deleted_at VARCHAR(64) NULL`)
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN deleted_by_user_id BIGINT UNSIGNED NULL`)
         await tryAddColumn(
           db,
           `ALTER TABLE user_devices ADD COLUMN device_permission VARCHAR(32) NOT NULL DEFAULT 'monitoring'`,
@@ -158,6 +163,8 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)
         await tryAddColumn(db, `ALTER TABLE users ADD COLUMN updated_at TEXT`)
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN deleted_at TEXT`)
+        await tryAddColumn(db, `ALTER TABLE users ADD COLUMN deleted_by_user_id INTEGER`)
         await tryAddColumn(
           db,
           `ALTER TABLE user_devices ADD COLUMN device_permission TEXT NOT NULL DEFAULT 'monitoring'`,
@@ -236,6 +243,8 @@ export async function ensureRbacCompatibility(db: D1Database, seedAdminEmail?: s
          SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
              role = 'admin',
              is_active = 1,
+             deleted_at = NULL,
+             deleted_by_user_id = NULL,
              updated_at = ?
          WHERE lower(email) = lower(?)`,
       )
@@ -298,6 +307,7 @@ export async function getUserByEmail(db: D1Database, email: string) {
   const row = await db
     .prepare(
       `SELECT id, name, email, password_hash, role, is_active, created_at, updated_at
+              , deleted_at, deleted_by_user_id
        FROM users
        WHERE lower(email) = lower(?)
        LIMIT 1`,
@@ -320,6 +330,7 @@ export async function getUserById(db: D1Database, id: number, seedAdminEmail?: s
   const row = await db
     .prepare(
       `SELECT id, name, email, password_hash, role, is_active, created_at, updated_at
+              , deleted_at, deleted_by_user_id
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -381,6 +392,8 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
                password_hash = ?,
                role = 'admin',
                is_active = 1,
+               deleted_at = NULL,
+               deleted_by_user_id = NULL,
                updated_at = ?
            WHERE id = ?`,
         )
@@ -395,6 +408,8 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
          SET name = COALESCE(NULLIF(TRIM(name), ''), 'Administrator'),
              role = 'admin',
              is_active = 1,
+             deleted_at = NULL,
+             deleted_by_user_id = NULL,
              updated_at = ?
          WHERE id = ?`,
       )
@@ -412,12 +427,14 @@ export async function ensureSeedAdminUser(db: D1Database, input: {
   })
 }
 
-export async function listUsers(db: D1Database) {
+export async function listUsers(db: D1Database, input: { includeArchived?: boolean } = {}) {
   await ensureRbacCompatibility(db)
+  const where = input.includeArchived ? '' : 'WHERE deleted_at IS NULL'
   const result = await db
     .prepare(
-      `SELECT id, name, email, role, is_active, created_at, updated_at
+      `SELECT id, name, email, role, is_active, created_at, updated_at, deleted_at, deleted_by_user_id
        FROM users
+       ${where}
        ORDER BY role ASC, id ASC`,
     )
     .all<UserSummaryRecord>()
@@ -455,6 +472,40 @@ export async function updateUserProfile(db: D1Database, userId: number, input: {
   updates.push('updated_at = ?')
   params.push(new Date().toISOString(), userId)
   return db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run()
+}
+
+export async function archiveUserByAdmin(db: D1Database, input: {
+  userId: number
+  actorUserId: number
+}) {
+  await ensureRbacCompatibility(db)
+  const nowIso = new Date().toISOString()
+  return db
+    .prepare(
+      `UPDATE users
+       SET is_active = 0,
+           deleted_at = COALESCE(deleted_at, ?),
+           deleted_by_user_id = COALESCE(deleted_by_user_id, ?),
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(nowIso, input.actorUserId, nowIso, input.userId)
+    .run()
+}
+
+export async function restoreUserByAdmin(db: D1Database, userId: number) {
+  await ensureRbacCompatibility(db)
+  return db
+    .prepare(
+      `UPDATE users
+       SET is_active = 1,
+           deleted_at = NULL,
+           deleted_by_user_id = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(new Date().toISOString(), userId)
+    .run()
 }
 
 export async function updateUserByAdmin(db: D1Database, userId: number, input: {
@@ -525,7 +576,7 @@ export async function findAuthSessionByRefreshTokenHash(db: D1Database, refreshT
   await ensureRbacCompatibility(db)
   return db
     .prepare(
-      `SELECT s.id AS session_id, s.user_id, u.email, u.role, u.is_active,
+      `SELECT s.id AS session_id, s.user_id, u.email, u.role, u.is_active, u.deleted_at,
               u.name,
               s.refresh_token_hash, s.expires_at, s.created_at,
               s.last_used_at, s.rotated_at, s.revoked_at, s.replaced_by_session_id

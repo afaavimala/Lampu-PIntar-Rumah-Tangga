@@ -46,7 +46,7 @@ async function verifyUserJwt(c: Context<AppEnv>, token: string): Promise<JwtVeri
     }
 
     const user = await getUserById(c.env.DB, Number(decoded.sub), c.env.SEED_ADMIN_EMAIL)
-    if (!user || user.is_active !== 1) {
+    if (!user || user.is_active !== 1 || user.deleted_at != null) {
       return { principal: null, failureReason: 'AUTH_INVALID_TOKEN' }
     }
 

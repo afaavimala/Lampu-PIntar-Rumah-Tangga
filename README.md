@@ -307,12 +307,24 @@ Migrasi MariaDB akan memastikan seed default:
 
 Semua nilai seed bisa diubah via env `SEED_*` di backend env file. Akun `SEED_ADMIN_EMAIL` selalu dipromosikan dan diaktifkan sebagai `admin`. Hash seed legacy bawaan akan di-upgrade ke password env, tetapi password yang sudah diedit dari Profile tidak ditimpa lagi saat login.
 
+## Login dan Rate Limit
+
+Login memakai pembatas percobaan gagal berbasis IP agar password tidak bisa ditebak terus-menerus:
+- `BACKEND_AUTH_LOGIN_RATE_LIMIT_MAX`: jumlah gagal yang masih diberi respons normal.
+- `BACKEND_AUTH_LOGIN_RATE_LIMIT_WINDOW_SEC`: jendela hitung percobaan gagal.
+- `BACKEND_AUTH_LOGIN_BACKOFF_BASE_SEC`: tunggu awal setelah melewati batas.
+- `BACKEND_AUTH_LOGIN_BACKOFF_FACTOR`: pengali exponential backoff.
+- `BACKEND_AUTH_LOGIN_BACKOFF_MAX_SEC`: batas tunggu maksimum.
+
+Contoh: jika max `5`, base `30`, factor `2`, maka percobaan setelah melewati batas akan mendapat waktu tunggu yang bisa naik dari 30 detik, 60 detik, 120 detik, dan seterusnya sampai nilai maksimum. Dashboard menampilkan countdown realtime sampai 0 dan tidak menampilkan `requestId` teknis ke user.
+
 ## RBAC
 
 Role user:
 - `admin`: akun dari `SEED_ADMIN_EMAIL`; dapat membuka Dashboard, User Manager, Device Manager, Schedule Manager, dan Profile.
 - `member`: dibuat dari User Manager; hanya membuka Dashboard dan Profile.
 - Semua akun punya `name`, `email`, password, status aktif/nonaktif, dan role.
+- User Manager memakai archive/restore, bukan hard delete. User archived tetap ada di database untuk menjaga riwayat log, schedule, dan assignment, tetapi tidak bisa login sampai direstore.
 
 Permission member per device:
 - `monitoring`: read-only untuk status/realtime dan metadata yang diizinkan.
@@ -328,6 +340,7 @@ Aturan penting:
 - Akses schedule bersifat per device. Jika member punya izin schedule pada sebuah device, daftar schedule device itu akan muncul walaupun schedule awalnya dibuat oleh admin atau user lain.
 - `schedule_permission='none'` membuat seluruh bagian schedule untuk device tersebut tidak tampil di dashboard member.
 - `schedule_permission='manage'` hanya valid jika `device_permission` minimal `control`. User Manager mencegah kombinasi invalid ini, dan backend tetap menolak mutasi jadwal bila device masih `monitoring`.
+- Pada dashboard, form jadwal default memakai `Interval Eksekusi (menit) = 1`. Waktu diisi sebagai `HH:mm:ss`, tetapi scheduler tetap berjalan pada resolusi menit.
 
 ## API v1
 
@@ -356,8 +369,11 @@ Users/Profile:
 - `GET /api/v1/profile`
 - `PATCH /api/v1/profile`
 - `GET /api/v1/users` (admin)
+- `GET /api/v1/users?includeArchived=1` (admin, tampilkan user archived)
 - `POST /api/v1/users` (admin, membuat `member`)
 - `PATCH /api/v1/users/{userId}` (admin)
+- `DELETE /api/v1/users/{userId}` (admin, archive/soft delete member)
+- `POST /api/v1/users/{userId}/restore` (admin, restore member archived)
 - `GET /api/v1/users/{userId}/assignments` (admin)
 - `PUT /api/v1/users/{userId}/assignments` (admin)
 

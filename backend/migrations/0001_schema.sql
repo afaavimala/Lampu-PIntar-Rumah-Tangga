@@ -8,7 +8,10 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'member',
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
-  updated_at TEXT
+  updated_at TEXT,
+  deleted_at TEXT,
+  deleted_by_user_id INTEGER,
+  FOREIGN KEY (deleted_by_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS devices (

@@ -28,12 +28,65 @@ type SchedulePatchInput = Partial<{
   enforceEveryMinute: number | null
 }>
 
+export class ApiRequestError extends Error {
+  status: number
+  code?: string
+  retryAfterSec?: number
+  requestId?: string
+
+  constructor(
+    message: string,
+    input: {
+      status: number
+      code?: string
+      retryAfterSec?: number
+      requestId?: string
+    },
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = input.status
+    this.code = input.code
+    this.retryAfterSec = input.retryAfterSec
+    this.requestId = input.requestId
+  }
+}
+
 async function safeParseEnvelope<T>(response: Response): Promise<ApiEnvelope<T> | null> {
   try {
     return (await response.json()) as ApiEnvelope<T>
   } catch {
     return null
   }
+}
+
+function readRetryAfterSec<T>(response: Response, payload: ApiEnvelope<T> | null) {
+  const detailValue = payload?.error?.details?.retryAfterSec
+  if (typeof detailValue === 'number' && Number.isFinite(detailValue) && detailValue > 0) {
+    return Math.ceil(detailValue)
+  }
+  if (typeof detailValue === 'string') {
+    const parsed = Number(detailValue)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.ceil(parsed)
+    }
+  }
+
+  const retryAfter = response.headers.get('retry-after')
+  if (!retryAfter) {
+    return undefined
+  }
+  const parsed = Number(retryAfter)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : undefined
+}
+
+function createApiError<T>(response: Response, payload: ApiEnvelope<T> | null) {
+  return new ApiRequestError(payload?.error?.message ?? `Request failed (${response.status})`, {
+    status: response.status,
+    code: payload?.error?.code,
+    retryAfterSec: readRetryAfterSec(response, payload),
+    requestId: response.headers.get('x-request-id') ?? payload?.meta?.requestId,
+  })
 }
 
 async function refreshSessionIfNeeded() {
@@ -67,21 +120,12 @@ async function apiFetch<T>(path: string, init: RequestInit = {}, allowRefresh = 
       return apiFetch<T>(path, init, false)
     }
     if (!payload) {
-      throw new Error('Session expired')
+      throw new ApiRequestError('Session expired', { status: response.status })
     }
   }
 
   if (!response.ok || !payload?.success) {
-    const requestId = response.headers.get('x-request-id')
-    const retryAfter = response.headers.get('retry-after')
-    let message = payload?.error?.message ?? `Request failed (${response.status})`
-    if (response.status === 429 && retryAfter) {
-      message = `${message}. Retry after ${retryAfter}s`
-    }
-    if (requestId) {
-      message = `${message} [requestId=${requestId}]`
-    }
-    throw new Error(message)
+    throw createApiError(response, payload)
   }
 
   return payload.data
@@ -282,8 +326,13 @@ export function updateProfile(input: {
   })
 }
 
-export function listUsers() {
-  return apiFetch<UserSummary[]>('/api/v1/users')
+export function listUsers(input: { includeArchived?: boolean } = {}) {
+  const params = new URLSearchParams()
+  if (input.includeArchived) {
+    params.set('includeArchived', '1')
+  }
+  const suffix = params.toString()
+  return apiFetch<UserSummary[]>(suffix ? `/api/v1/users?${suffix}` : '/api/v1/users')
 }
 
 export function createUser(input: {
@@ -315,6 +364,20 @@ export function updateUser(input: {
       password: input.password,
       isActive: input.isActive,
     }),
+  })
+}
+
+export function archiveUser(userId: number) {
+  return apiFetch<UserSummary>(`/api/v1/users/${userId}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(),
+  })
+}
+
+export function restoreUser(userId: number) {
+  return apiFetch<UserSummary>(`/api/v1/users/${userId}/restore`, {
+    method: 'POST',
+    headers: jsonHeaders(),
   })
 }
 

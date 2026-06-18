@@ -21,6 +21,7 @@ import {
   logout,
   patchSchedule,
   updateDevice,
+  ApiRequestError,
 } from './lib/api'
 import { createRealtimeClient, type RealtimeClient } from './lib/realtime'
 import type {
@@ -115,6 +116,23 @@ function toErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function toLoginErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 429 || error.code === 'RATE_LIMITED') {
+      const wait = Math.max(1, Math.ceil(error.retryAfterSec ?? 1))
+      return `Terlalu banyak percobaan login. Tunggu ${wait} detik lalu coba lagi.`
+    }
+    if (error.status === 401 || error.code === 'AUTH_INVALID_TOKEN') {
+      return 'Email atau password tidak sesuai. Periksa kembali lalu coba lagi.'
+    }
+    if (error.code === 'VALIDATION_ERROR') {
+      return 'Email atau password belum sesuai. Periksa kembali isi form login.'
+    }
+  }
+
+  return 'Login gagal. Periksa koneksi atau coba lagi sebentar lagi.'
+}
+
 function syncDiscoveredDevicesWithOwned(discovered: DiscoveredDevice[], devices: Device[]) {
   if (discovered.length === 0) {
     return discovered
@@ -152,6 +170,7 @@ export default function App() {
   const [viewer, setViewer] = useState<BootstrapResponse['viewer']>(null)
   const [viewerLabel, setViewerLabel] = useState('Akun')
   const [authError, setAuthError] = useState<string | null>(null)
+  const [loginRetryAfterSec, setLoginRetryAfterSec] = useState<number | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceState, setDeviceState] = useState<DeviceStateMap>({})
@@ -454,13 +473,17 @@ export default function App() {
 
   async function handleLogin(email: string, password: string) {
     setAuthError(null)
+    setLoginRetryAfterSec(null)
     setLoading(true)
     try {
       const loginResult = await login(email, password)
       setViewerLabel(loginResult.user.name)
       await hydrateDashboard()
     } catch (error) {
-      setAuthError(toErrorMessage(error, 'Login gagal'))
+      if (error instanceof ApiRequestError && (error.status === 429 || error.code === 'RATE_LIMITED')) {
+        setLoginRetryAfterSec(Math.max(1, Math.ceil(error.retryAfterSec ?? 1)))
+      }
+      setAuthError(toLoginErrorMessage(error))
     } finally {
       setLoading(false)
     }
@@ -789,7 +812,14 @@ export default function App() {
   }
 
   if (!isLoggedIn) {
-    return <LoginForm loading={loading} error={authError} onLogin={handleLogin} />
+    return (
+      <LoginForm
+        loading={loading}
+        error={authError}
+        retryAfterSec={loginRetryAfterSec}
+        onLogin={handleLogin}
+      />
+    )
   }
 
   return (
@@ -842,6 +872,17 @@ export default function App() {
               </button>
               {accountMenuOpen ? (
                 <div className="account-menu" role="menu">
+                  {viewer?.kind === 'user' ? (
+                    <div className="account-menu-identity">
+                      <strong>{viewer.name}</strong>
+                      <span>{viewer.email}</span>
+                    </div>
+                  ) : (
+                    <div className="account-menu-identity">
+                      <strong>{viewerLabel}</strong>
+                      <span>API Client</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     role="menuitem"

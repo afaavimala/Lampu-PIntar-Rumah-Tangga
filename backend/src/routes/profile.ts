@@ -31,6 +31,8 @@ function toProfileDto(user: {
   is_active: number
   created_at: string
   updated_at: string | null
+  deleted_at: string | null
+  deleted_by_user_id: number | null
 }) {
   return {
     id: Number(user.id),
@@ -40,6 +42,10 @@ function toProfileDto(user: {
     isActive: Number(user.is_active) === 1,
     createdAt: user.created_at,
     updatedAt: user.updated_at,
+    deletedAt: user.deleted_at,
+    deletedByUserId:
+      user.deleted_by_user_id == null ? null : Number(user.deleted_by_user_id),
+    isArchived: user.deleted_at != null,
   }
 }
 
@@ -50,7 +56,7 @@ profileRoutes.get('/profile', requireUserAuth(), async (c) => {
   }
 
   const user = await getUserById(c.env.DB, principal.userId, c.env.SEED_ADMIN_EMAIL)
-  if (!user || user.is_active !== 1) {
+  if (!user || user.is_active !== 1 || user.deleted_at != null) {
     return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid user', 401)
   }
   return ok(c, toProfileDto(user))
@@ -68,7 +74,7 @@ profileRoutes.patch('/profile', requireUserAuth(), async (c) => {
   }
 
   const user = await getUserById(c.env.DB, principal.userId, c.env.SEED_ADMIN_EMAIL)
-  if (!user || user.is_active !== 1) {
+  if (!user || user.is_active !== 1 || user.deleted_at != null) {
     return fail(c, 'AUTH_INVALID_TOKEN', 'Invalid user', 401)
   }
 

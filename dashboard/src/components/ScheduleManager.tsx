@@ -550,58 +550,58 @@ export function ScheduleManager({
   const editingWindow = useMemo(() => windows.find((window) => window.key === editingKey) ?? null, [windows, editingKey])
 
   return (
-    <section className="schedule-shell">
+    <section className="schedule-stack">
       {hasManageableDevices ? (
-      <div className="schedule-create">
-        <h3>Buat Jadwal Lampu</h3>
-        <p className="small">
-          Pilih hari, rentang waktu aktif, kondisi lampu, lalu interval enforcement agar eksekusi tetap terjaga.
-        </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault()
-            if (
-              !selectedDeviceId ||
-              activeDays.length === 0 ||
-              !isValidTime24(timeFrom) ||
-              !isValidTime24(timeUntil) ||
-              !isValidIntervalMinutes(enforceEveryMinute)
-            ) {
-              return
-            }
+        <div className="schedule-create">
+          <h3>Buat Jadwal Lampu</h3>
+          <p className="small">
+            Pilih hari, rentang waktu aktif, kondisi lampu, lalu interval enforcement agar eksekusi tetap terjaga.
+          </p>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault()
+              if (
+                !selectedDeviceId ||
+                activeDays.length === 0 ||
+                !isValidTime24(timeFrom) ||
+                !isValidTime24(timeUntil) ||
+                !isValidIntervalMinutes(enforceEveryMinute)
+              ) {
+                return
+              }
 
-            const startMinute = timeToMinute(timeFrom)
-            const endMinute = timeToMinute(timeUntil)
-            if (startMinute == null || endMinute == null) return
+              const startMinute = timeToMinute(timeFrom)
+              const endMinute = timeToMinute(timeUntil)
+              if (startMinute == null || endMinute == null) return
 
-            await onCreate({
-              deviceId: selectedDeviceId,
-              timezone,
-              enforcementCron: buildEnforcementCron(activeDays),
-              activeAction,
-              windowGroupId: crypto.randomUUID(),
-              windowStartMinute: startMinute,
-              windowEndMinute: endMinute,
-              enforceEveryMinute,
-            })
-          }}
-          className="schedule-form"
-        >
-          <label>
-            Device
-            <select
-              value={selectedDeviceId}
-              onChange={(event) => setDeviceIdInput(event.target.value)}
-              required
-              disabled={busy || !hasManageableDevices}
-            >
-              {manageableDevices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              await onCreate({
+                deviceId: selectedDeviceId,
+                timezone,
+                enforcementCron: buildEnforcementCron(activeDays),
+                activeAction,
+                windowGroupId: crypto.randomUUID(),
+                windowStartMinute: startMinute,
+                windowEndMinute: endMinute,
+                enforceEveryMinute,
+              })
+            }}
+            className="schedule-form"
+          >
+            <label>
+              Device
+              <select
+                value={selectedDeviceId}
+                onChange={(event) => setDeviceIdInput(event.target.value)}
+                required
+                disabled={busy || !hasManageableDevices}
+              >
+                {manageableDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
           <fieldset className="weekday-picker" disabled={busy || !hasManageableDevices}>
             <legend>Hari Aktif</legend>
